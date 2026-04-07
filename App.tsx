@@ -1,13 +1,17 @@
 // App.tsx
-import React from 'react';
-import { View, Text } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { auth } from './services/firebase';
 
 import MapScreen from './screens/MapScreen';
 import FeedScreen from './screens/FeedScreen';
 import RouteScreen from './screens/RouteScreen';
 import ProfileScreen from './screens/ProfileScreen';
+import AuthScreen from './screens/AuthScreen';
+
 import { C } from './constants/theme';
 
 const Tab = createBottomTabNavigator();
@@ -24,6 +28,29 @@ function TabIcon({ icon, label, focused }: { icon: string; label: string; focuse
 }
 
 export default function App() {
+  const [user, setUser] = useState<User | null>(null);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setChecking(false);
+    });
+    return unsubscribe;
+  }, []);
+
+  if (checking) {
+    return (
+      <View style={{ flex: 1, backgroundColor: C.bg, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator color={C.accent} size="large" />
+      </View>
+    );
+  }
+
+  if (!user) {
+    return <AuthScreen />;
+  }
+
   return (
     <NavigationContainer>
       <Tab.Navigator

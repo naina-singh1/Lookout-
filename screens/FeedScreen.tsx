@@ -1,11 +1,12 @@
 // screens/FeedScreen.tsx
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, FlatList,
-  TouchableOpacity, SafeAreaView, StatusBar,
+  TouchableOpacity, SafeAreaView, StatusBar, ActivityIndicator,
 } from 'react-native';
-import { C, F, R, MOCK_POTHOLES, Severity } from '../constants/theme';
+import { C, R, Pothole, Severity } from '../constants/theme';
 import { ScreenHeader, PotholeCard } from '../components/ui';
+import { subscribePotholes } from '../services/potholes';
 
 const FILTERS: { label: string; value: Severity | 'all' }[] = [
   { label: 'All', value: 'all' },
@@ -16,12 +17,23 @@ const FILTERS: { label: string; value: Severity | 'all' }[] = [
 
 export default function FeedScreen() {
   const [filter, setFilter] = useState<Severity | 'all'>('all');
-  const data = filter === 'all' ? MOCK_POTHOLES : MOCK_POTHOLES.filter(p => p.severity === filter);
+  const [potholes, setPotholes] = useState<Pothole[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsub = subscribePotholes(data => {
+      setPotholes(data);
+      setLoading(false);
+    });
+    return unsub;
+  }, []);
+
+  const data = filter === 'all' ? potholes : potholes.filter(p => p.severity === filter);
 
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor={C.bg} />
-      <ScreenHeader title="Nearby Feed" subtitle={`${data.length} reports`} />
+      <ScreenHeader title="Nearby Feed" subtitle={`${data.length} report${data.length !== 1 ? 's' : ''}`} />
 
       {/* Filter chips */}
       <View style={styles.chips}>
@@ -38,19 +50,30 @@ export default function FeedScreen() {
         ))}
       </View>
 
-      <FlatList
-        data={data}
-        keyExtractor={item => item.id}
-        contentContainerStyle={styles.list}
-        renderItem={({ item }) => <PotholeCard {...item} />}
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyIcon}>🕳</Text>
-            <Text style={styles.emptyText}>No potholes found</Text>
-            <Text style={styles.emptySub}>Try a different filter</Text>
-          </View>
-        }
-      />
+      {loading ? (
+        <View style={styles.centered}>
+          <ActivityIndicator color={C.accent} size="large" />
+          <Text style={styles.loadingText}>Loading reports…</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={data}
+          keyExtractor={item => item.id}
+          contentContainerStyle={styles.list}
+          renderItem={({ item }) => <PotholeCard {...item} />}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Text style={styles.emptyIcon}>🕳</Text>
+              <Text style={styles.emptyText}>
+                {filter === 'all' ? 'No potholes reported yet' : `No ${filter} potholes`}
+              </Text>
+              <Text style={styles.emptySub}>
+                {filter === 'all' ? 'Use the Map tab to report one!' : 'Try a different filter'}
+              </Text>
+            </View>
+          }
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -75,24 +98,13 @@ const styles = StyleSheet.create({
     backgroundColor: C.accent,
     borderColor: C.accent,
   },
-  chipText: {
-    fontFamily: F.body,
-    fontSize: 12,
-    color: C.textMuted,
-  },
-  chipTextActive: {
-    color: '#fff',
-  },
-  list: {
-    paddingHorizontal: 16,
-    paddingBottom: 24,
-  },
-  empty: {
-    alignItems: 'center',
-    paddingTop: 60,
-    gap: 8,
-  },
+  chipText: { fontSize: 12, color: C.textMuted },
+  chipTextActive: { color: '#fff' },
+  list: { paddingHorizontal: 16, paddingBottom: 24 },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  loadingText: { color: C.textMuted, fontSize: 13 },
+  empty: { alignItems: 'center', paddingTop: 60, gap: 8 },
   emptyIcon: { fontSize: 40 },
-  emptyText: { fontFamily: F.display, fontSize: 16, color: C.textSecondary },
-  emptySub: { fontFamily: F.mono, fontSize: 12, color: C.textMuted },
+  emptyText: { fontSize: 16, color: C.textSecondary },
+  emptySub: { fontSize: 12, color: C.textMuted },
 });
