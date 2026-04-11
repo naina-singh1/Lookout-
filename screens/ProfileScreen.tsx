@@ -26,7 +26,7 @@ export default function ProfileScreen() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.username}>naina_s</Text>
-            <Text style={styles.location}>📍 Bengaluru</Text>
+            <Text style={styles.location}>📍 Delhi</Text>
           </View>
           <View style={styles.rankBadge}>
             <Text style={styles.rankNum}>#12</Text>

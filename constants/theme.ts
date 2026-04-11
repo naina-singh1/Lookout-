@@ -57,9 +57,9 @@ export interface Pothole {
 }
 
 export const MOCK_POTHOLES: Pothole[] = [
-  { id: '1', location: 'MG Road', sublocation: 'Signal 4', severity: 'severe', confirmed: 14, distance: '120m', reportedBy: 'rahul_k', time: '2m ago', lat: 12.9716, lng: 77.5946 },
-  { id: '2', location: 'Indiranagar 12th Main', sublocation: 'Near CMH Rd junction', severity: 'moderate', confirmed: 7, distance: '340m', reportedBy: 'priya_m', time: '18m ago', lat: 12.9784, lng: 77.6408 },
-  { id: '3', location: 'Old Airport Rd', sublocation: 'Domlur flyover', severity: 'minor', confirmed: 3, distance: '1.2km', reportedBy: 'anon', time: '1h ago', lat: 12.9599, lng: 77.6387 },
-  { id: '4', location: 'Koramangala 80ft Rd', sublocation: 'Near Forum Mall', severity: 'severe', confirmed: 21, distance: '2.1km', reportedBy: 'vikram_s', time: '3h ago', lat: 12.9352, lng: 77.6245 },
-  { id: '5', location: 'Hosur Road', sublocation: 'Electronic City flyover', severity: 'moderate', confirmed: 9, distance: '4.5km', reportedBy: 'deepa_r', time: '5h ago', lat: 12.8458, lng: 77.6603 },
+  { id: '1', location: 'Connaught Place', sublocation: 'Inner Circle, Block A', severity: 'severe', confirmed: 14, distance: '120m', reportedBy: 'rahul_k', time: '2m ago', lat: 28.6329, lng: 77.2195 },
+  { id: '2', location: 'Lajpat Nagar', sublocation: 'Near Central Market', severity: 'moderate', confirmed: 7, distance: '340m', reportedBy: 'priya_m', time: '18m ago', lat: 28.5700, lng: 77.2373 },
+  { id: '3', location: 'Karol Bagh', sublocation: 'Ajmal Khan Road', severity: 'minor', confirmed: 3, distance: '1.2km', reportedBy: 'anon', time: '1h ago', lat: 28.6514, lng: 77.1908 },
+  { id: '4', location: 'Saket', sublocation: 'Near Select Citywalk', severity: 'severe', confirmed: 21, distance: '2.1km', reportedBy: 'vikram_s', time: '3h ago', lat: 28.5275, lng: 77.2191 },
+  { id: '5', location: 'Dwarka Sector 10', sublocation: 'Near metro station', severity: 'moderate', confirmed: 9, distance: '4.5km', reportedBy: 'deepa_r', time: '5h ago', lat: 28.5921, lng: 77.0460 },
 ];

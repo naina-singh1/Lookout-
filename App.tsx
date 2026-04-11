@@ -91,7 +91,7 @@ export default function App() {
           name="Profile"
           component={ProfileScreen}
           options={{
-            tabBarIcon: ({ focused }) => <TabIcon icon="👤" label="Profile" focused={focused} />,
+            tabBarIcon: ({ focused }) => <TabIcon icon="👤" label="Me" focused={focused} />,
           }}
         />
       </Tab.Navigator>

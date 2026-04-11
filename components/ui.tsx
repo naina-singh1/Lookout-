@@ -1,6 +1,6 @@
 // Lookout UI Components — components/ui.tsx
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { C, R, Severity, severityColor, severityBg } from '../constants/theme';
 
 export function Wordmark({ size = 22 }: { size?: number }) {
@@ -66,22 +66,51 @@ export function PotholeCard({
 }
 
 export function DrivingAlert({
-  location, severity, distance, onDismiss,
+  location, severity, distanceMeters, onDismiss,
 }: {
-  location: string; severity: Severity; distance: string; onDismiss: () => void;
+  location: string;
+  severity: Severity;
+  distanceMeters: number;
+  onDismiss: () => void;
 }) {
+  const pulse = useRef(new Animated.Value(1)).current;
+
+  // Pulse border opacity for severe alerts
+  useEffect(() => {
+    if (severity !== 'severe') return;
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 0.2, duration: 500, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1,   duration: 500, useNativeDriver: true }),
+      ])
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [severity]);
+
+  const color = severityColor(severity);
+  const distText = distanceMeters < 1000
+    ? `${Math.round(distanceMeters)}m`
+    : `${(distanceMeters / 1000).toFixed(1)}km`;
+  const urgency = distanceMeters <= 30 ? 'SLOW DOWN NOW' : distanceMeters <= 60 ? 'Slow down' : 'Ease off';
+  const icon = severity === 'severe' ? '🚨' : severity === 'moderate' ? '⚠️' : '⚡';
+
   return (
-    <View style={styles.alert}>
-      <View style={[styles.alertAccent, { backgroundColor: severityColor(severity) }]} />
+    <Animated.View style={[
+      styles.alert,
+      { borderColor: color + '55' },
+      severity === 'severe' && { borderColor: color, opacity: pulse },
+    ]}>
+      <View style={[styles.alertAccent, { backgroundColor: color }]} />
       <View style={styles.alertContent}>
-        <Text style={styles.alertTitle}>Pothole ahead</Text>
-        <Text style={styles.alertSub}>{location} · {severity} · ease off</Text>
+        <Text style={styles.alertTitle}>{icon} Pothole ahead — {urgency}</Text>
+        <Text style={styles.alertSub}>{location} · {severity}</Text>
       </View>
-      <Text style={styles.alertDistance}>{distance}</Text>
+      <Text style={[styles.alertDistance, { color }]}>{distText}</Text>
       <TouchableOpacity onPress={onDismiss} style={styles.alertDismiss}>
         <Text style={{ color: C.textSecondary, fontSize: 16 }}>✕</Text>
       </TouchableOpacity>
-    </View>
+    </Animated.View>
   );
 }
 

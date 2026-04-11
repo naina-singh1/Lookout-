@@ -1,5 +1,5 @@
 // screens/MapScreen.tsx
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   SafeAreaView, StatusBar, Modal, ScrollView,
@@ -7,44 +7,134 @@ import {
 } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
-import { C, F, R, Pothole, Severity, severityColor } from '../constants/theme';
+import { C, R, Pothole, Severity, severityColor } from '../constants/theme';
 import { ScreenHeader, PotholeCard, DrivingAlert } from '../components/ui';
 import { reportPothole, subscribePotholes } from '../services/potholes';
+import { checkProximity, getDistanceMeters, formatDistance, ProximityAlert } from '../services/proximity';
+import {
+  startBackgroundTracking, stopBackgroundTracking, registerLocationCallback,
+  updateBgPotholes,
+} from '../tasks/locationTask';
+import {
+  requestNotificationPermission, setupAndroidNotificationChannel,
+} from '../services/notifications';
 
 const SEVERITY_OPTIONS: { label: string; value: Severity; color: string }[] = [
-  { label: '🔴 Severe', value: 'severe', color: C.severe },
+  { label: '🔴 Severe',   value: 'severe',   color: C.severe },
   { label: '🟠 Moderate', value: 'moderate', color: C.moderate },
-  { label: '🟢 Minor', value: 'minor', color: C.minor },
+  { label: '🟢 Minor',    value: 'minor',    color: C.minor },
 ];
 
-const BENGALURU = { latitude: 12.9716, longitude: 77.5946, latitudeDelta: 0.08, longitudeDelta: 0.08 };
+const DELHI = { latitude: 28.6139, longitude: 77.2090, latitudeDelta: 0.08, longitudeDelta: 0.08 };
 
 export default function MapScreen() {
   const mapRef = useRef<MapView>(null);
-  const [potholes, setPotholes] = useState<Pothole[]>([]);
-  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [locationLoading, setLocationLoading] = useState(true);
-  const [reportModal, setReportModal] = useState(false);
-  const [selectedSeverity, setSelectedSeverity] = useState<Severity>('moderate');
-  const [reporting, setReporting] = useState(false);
-  const [alertVisible, setAlertVisible] = useState(true);
-  const nearby = potholes.slice(0, 5);
+  const locationSub = useRef<Location.LocationSubscription | null>(null);
+  const alertedIdsRef = useRef<Set<string>>(new Set());
+  const potholesRef = useRef<Pothole[]>([]);
 
-  // Get user location
+  const [potholes, setPotholes]           = useState<Pothole[]>([]);
+  const [userLocation, setUserLocation]   = useState<{ latitude: number; longitude: number } | null>(null);
+  const [locationLoading, setLocationLoading] = useState(true);
+  const [reportModal, setReportModal]     = useState(false);
+  const [selectedSeverity, setSelectedSeverity] = useState<Severity>('moderate');
+  const [reporting, setReporting]         = useState(false);
+
+  // Alert queue — active (showing) + pending (waiting)
+  const [activeAlert, setActiveAlert]     = useState<ProximityAlert | null>(null);
+  const [alertQueue, setAlertQueue]       = useState<ProximityAlert[]>([]);
+
+  // Keep refs / background-task state in sync whenever the pothole list changes
+  useEffect(() => {
+    potholesRef.current = potholes;
+    updateBgPotholes(potholes); // feed the background task's proximity engine
+  }, [potholes]);
+
+  // Push new alerts into the queue
+  const enqueueAlerts = useCallback((alerts: ProximityAlert[]) => {
+    if (alerts.length === 0) return;
+    setActiveAlert(prev => {
+      if (prev) {
+        setAlertQueue(q => [...q, ...alerts]);
+        return prev;
+      }
+      // Show the first one immediately, queue the rest
+      if (alerts.length > 1) setAlertQueue(alerts.slice(1));
+      return alerts[0];
+    });
+  }, []);
+
+  // Dismiss active alert and pop the next one from queue
+  const dismissAlert = useCallback(() => {
+    setAlertQueue(q => {
+      const [next, ...rest] = q;
+      setActiveAlert(next ?? null);
+      return rest;
+    });
+  }, []);
+
+  // Shared handler — called by both foreground watcher and background task
+  const handleLocationUpdate = useCallback((latitude: number, longitude: number) => {
+    setUserLocation({ latitude, longitude });
+    const { newAlerts, updatedAlertedIds } = checkProximity(
+      latitude, longitude,
+      potholesRef.current,
+      alertedIdsRef.current,
+    );
+    alertedIdsRef.current = updatedAlertedIds;
+    if (newAlerts.length > 0) enqueueAlerts(newAlerts);
+  }, [enqueueAlerts]);
+
+  // Request permissions, start foreground watcher + background task
   useEffect(() => {
     (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
+      // 1. Foreground location permission (required first)
+      const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
+      if (fgStatus !== 'granted') { setLocationLoading(false); return; }
+
+      // 2. Show map immediately using last known position
+      const last = await Location.getLastKnownPositionAsync();
+      if (last) {
+        const coords = { latitude: last.coords.latitude, longitude: last.coords.longitude };
+        setUserLocation(coords);
+        mapRef.current?.animateToRegion({ ...coords, latitudeDelta: 0.05, longitudeDelta: 0.05 }, 800);
         setLocationLoading(false);
-        return;
       }
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+
+      // 3. Refine with a fresh GPS fix
+      const initial = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const coords = { latitude: initial.coords.latitude, longitude: initial.coords.longitude };
       setUserLocation(coords);
       mapRef.current?.animateToRegion({ ...coords, latitudeDelta: 0.05, longitudeDelta: 0.05 }, 800);
       setLocationLoading(false);
+
+      // 4. Foreground watcher (handles updates while app is open)
+      locationSub.current = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 3000, distanceInterval: 5 },
+        loc => handleLocationUpdate(loc.coords.latitude, loc.coords.longitude),
+      );
+
+      // 5. Ask for background + notification permissions after map is loaded
+      try {
+        await setupAndroidNotificationChannel();
+        await requestNotificationPermission();
+      } catch (e) {
+        console.warn('[Lookout] Notification setup failed:', e);
+      }
+
+      const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
+      if (bgStatus === 'granted') {
+        registerLocationCallback(handleLocationUpdate);
+        await startBackgroundTracking();
+      }
     })();
-  }, []);
+
+    return () => {
+      locationSub.current?.remove();
+      registerLocationCallback(null);   // unregister when screen unmounts
+      stopBackgroundTracking();
+    };
+  }, [enqueueAlerts, handleLocationUpdate]);
 
   // Subscribe to Firestore potholes
   useEffect(() => {
@@ -54,12 +144,11 @@ export default function MapScreen() {
 
   async function handleReport() {
     if (!userLocation) {
-      Alert.alert('Location needed', 'Enable location access to report a pothole at your position.');
+      Alert.alert('Location needed', 'Enable location access to report a pothole.');
       return;
     }
     setReporting(true);
     try {
-      // Reverse geocode for a human-readable location name
       const [place] = await Location.reverseGeocodeAsync(userLocation);
       const location = place
         ? [place.street, place.district || place.subregion].filter(Boolean).join(', ') || place.city || 'Unknown road'
@@ -67,7 +156,7 @@ export default function MapScreen() {
       const sublocation = place?.city || place?.region || '';
       await reportPothole(userLocation.latitude, userLocation.longitude, selectedSeverity, location, sublocation);
       setReportModal(false);
-      Alert.alert('Reported!', `${selectedSeverity.charAt(0).toUpperCase() + selectedSeverity.slice(1)} pothole logged at ${location}.`);
+      Alert.alert('Reported!', `${selectedSeverity} pothole logged at ${location}.`);
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -75,12 +164,25 @@ export default function MapScreen() {
     }
   }
 
-  const severePothole = nearby.find(p => p.severity === 'severe');
+  // Compute live distance for each pothole for the tray
+  const nearby = potholes
+    .map(p => ({
+      ...p,
+      distance: userLocation
+        ? formatDistance(getDistanceMeters(userLocation.latitude, userLocation.longitude, p.lat, p.lng))
+        : '—',
+    }))
+    .sort((a, b) => {
+      if (!userLocation) return 0;
+      return getDistanceMeters(userLocation.latitude, userLocation.longitude, a.lat, a.lng)
+           - getDistanceMeters(userLocation.latitude, userLocation.longitude, b.lat, b.lng);
+    })
+    .slice(0, 5);
 
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor={C.bg} />
-      <ScreenHeader title="Bengaluru" subtitle={`${nearby.length} nearby`} />
+      <ScreenHeader title="Delhi" subtitle={`${potholes.length} report${potholes.length !== 1 ? 's' : ''}`} />
 
       {/* Google Map */}
       <View style={styles.mapContainer}>
@@ -88,7 +190,7 @@ export default function MapScreen() {
           ref={mapRef}
           style={StyleSheet.absoluteFillObject}
           provider={PROVIDER_GOOGLE}
-          initialRegion={BENGALURU}
+          initialRegion={DELHI}
           showsUserLocation
           showsMyLocationButton={false}
           customMapStyle={darkMapStyle}
@@ -126,22 +228,25 @@ export default function MapScreen() {
         <TouchableOpacity style={styles.fab} onPress={() => setReportModal(true)}>
           <Text style={styles.fabText}>+ Report</Text>
         </TouchableOpacity>
+
       </View>
 
-      {/* Driving alert for nearest severe pothole */}
-      {severePothole && alertVisible && (
+      {/* Proximity alert banner */}
+      {activeAlert && (
         <DrivingAlert
-          location={severePothole.location}
-          severity="severe"
-          distance={severePothole.distance}
-          onDismiss={() => setAlertVisible(false)}
+          location={activeAlert.pothole.location}
+          severity={activeAlert.pothole.severity}
+          distanceMeters={activeAlert.distanceMeters}
+          onDismiss={dismissAlert}
         />
       )}
 
       {/* Bottom tray */}
       <View style={styles.tray}>
         <View style={styles.trayHandle} />
-        <Text style={styles.trayTitle}>Nearby Potholes</Text>
+        <Text style={styles.trayTitle}>
+          {nearby.length > 0 ? `Nearest ${nearby.length} Potholes` : 'No potholes nearby'}
+        </Text>
         {potholes.length === 0 ? (
           <Text style={styles.emptyText}>No potholes reported yet — be the first!</Text>
         ) : (
@@ -151,7 +256,7 @@ export default function MapScreen() {
         )}
       </View>
 
-      {/* Report severity modal */}
+      {/* Report modal */}
       <Modal visible={reportModal} transparent animationType="slide" onRequestClose={() => setReportModal(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalSheet}>
@@ -223,10 +328,7 @@ const styles = StyleSheet.create({
     width: 36, height: 4, backgroundColor: C.borderMuted,
     borderRadius: 2, alignSelf: 'center', marginBottom: 14,
   },
-  trayTitle: {
-    fontSize: 13, color: C.textSecondary,
-    marginBottom: 12, letterSpacing: 0.5,
-  },
+  trayTitle: { fontSize: 13, color: C.textSecondary, marginBottom: 12, letterSpacing: 0.5 },
   emptyText: { color: C.textMuted, fontSize: 13, textAlign: 'center', paddingVertical: 20 },
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' },
   modalSheet: {
@@ -251,7 +353,6 @@ const styles = StyleSheet.create({
   cancelText: { color: C.textMuted, fontSize: 14 },
 });
 
-// Dark map style matching app theme
 const darkMapStyle = [
   { elementType: 'geometry', stylers: [{ color: '#1a1a2e' }] },
   { elementType: 'labels.text.fill', stylers: [{ color: '#746855' }] },

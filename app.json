@@ -16,6 +16,12 @@
       "supportsTablet": true,
       "config": {
         "googleMapsApiKey": "AIzaSyBvh6kAxCSP_5nU8JEi_f_urI_W4HlcYU4"
+      },
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Lookout shows nearby potholes and alerts you when one is ahead.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Lookout alerts you about potholes even when the app is in the background while driving.",
+        "NSLocationAlwaysUsageDescription": "Lookout needs background location to warn you about potholes while driving.",
+        "UIBackgroundModes": ["location", "fetch", "remote-notification"]
       }
     },
     "android": {
@@ -29,14 +35,32 @@
         "googleMaps": {
           "apiKey": "AIzaSyBvh6kAxCSP_5nU8JEi_f_urI_W4HlcYU4"
         }
-      }
+      },
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-font",
-      "expo-location"
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Lookout shows nearby potholes and alerts you when one is ahead.",
+          "locationAlwaysAndWhenInUsePermission": "Lookout alerts you about potholes even when driving with the app in the background.",
+          "locationAlwaysPermission": "Lookout needs background location to warn you about potholes while driving.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ]
     ]
   }
 }
