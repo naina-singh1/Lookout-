@@ -18,6 +18,7 @@ import {
 import {
   requestNotificationPermission, setupAndroidNotificationChannel,
 } from '../services/notifications';
+import { getAlertPrefs } from '../services/alertPrefs';
 
 const SEVERITY_OPTIONS: { label: string; value: Severity; color: string }[] = [
   { label: '🔴 Severe',   value: 'severe',   color: C.severe },
@@ -32,6 +33,7 @@ export default function MapScreen() {
   const locationSub = useRef<Location.LocationSubscription | null>(null);
   const alertedIdsRef = useRef<Set<string>>(new Set());
   const potholesRef = useRef<Pothole[]>([]);
+  const userLocationRef = useRef<{ latitude: number; longitude: number } | null>(null);
 
   const [potholes, setPotholes]           = useState<Pothole[]>([]);
   const [userLocation, setUserLocation]   = useState<{ latitude: number; longitude: number } | null>(null);
@@ -44,11 +46,27 @@ export default function MapScreen() {
   const [activeAlert, setActiveAlert]     = useState<ProximityAlert | null>(null);
   const [alertQueue, setAlertQueue]       = useState<ProximityAlert[]>([]);
 
-  // Keep refs / background-task state in sync whenever the pothole list changes
+  // Keep refs / background-task state in sync whenever the pothole list changes.
+  // Also re-run proximity check so newly logged potholes (by anyone) alert immediately.
   useEffect(() => {
     potholesRef.current = potholes;
-    updateBgPotholes(potholes); // feed the background task's proximity engine
-  }, [potholes]);
+    updateBgPotholes(potholes);
+
+    const loc = userLocationRef.current;
+    if (!loc || potholes.length === 0) return;
+
+    const { newAlerts, updatedAlertedIds } = checkProximity(
+      loc.latitude, loc.longitude,
+      potholes,
+      alertedIdsRef.current,
+    );
+    alertedIdsRef.current = updatedAlertedIds;
+    if (newAlerts.length > 0) {
+      getAlertPrefs().then(({ drivingAlerts }) => {
+        if (drivingAlerts) enqueueAlerts(newAlerts);
+      });
+    }
+  }, [potholes, enqueueAlerts]);
 
   // Push new alerts into the queue
   const enqueueAlerts = useCallback((alerts: ProximityAlert[]) => {
@@ -74,15 +92,20 @@ export default function MapScreen() {
   }, []);
 
   // Shared handler — called by both foreground watcher and background task
-  const handleLocationUpdate = useCallback((latitude: number, longitude: number) => {
-    setUserLocation({ latitude, longitude });
+  const handleLocationUpdate = useCallback(async (latitude: number, longitude: number) => {
+    const coords = { latitude, longitude };
+    setUserLocation(coords);
+    userLocationRef.current = coords;
     const { newAlerts, updatedAlertedIds } = checkProximity(
       latitude, longitude,
       potholesRef.current,
       alertedIdsRef.current,
     );
     alertedIdsRef.current = updatedAlertedIds;
-    if (newAlerts.length > 0) enqueueAlerts(newAlerts);
+    if (newAlerts.length > 0) {
+      const { drivingAlerts } = await getAlertPrefs();
+      if (drivingAlerts) enqueueAlerts(newAlerts);
+    }
   }, [enqueueAlerts]);
 
   // Request permissions, start foreground watcher + background task
