@@ -11,7 +11,6 @@ import { ScreenHeader, SevBadge } from '../components/ui';
 import { subscribePotholes } from '../services/potholes';
 import { getDistanceMeters } from '../services/proximity';
 
-const MAPS_API_KEY = 'AIzaSyBvh6kAxCSP_5nU8JEi_f_urI_W4HlcYU4';
 const ROUTE_BUFFER_M = 150; // potholes within this distance of the route are included
 
 // ─── Polyline decoder ─────────────────────────────────────────────────────────
@@ -77,32 +76,46 @@ export default function RouteScreen() {
         return;
       }
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const origin = `${pos.coords.latitude},${pos.coords.longitude}`;
+      const { latitude, longitude } = pos.coords;
 
-      // 2. Fetch route from Google Directions API
-      const url =
-        `https://maps.googleapis.com/maps/api/directions/json` +
-        `?origin=${origin}` +
-        `&destination=${encodeURIComponent(destination)}` +
-        `&key=${MAPS_API_KEY}`;
+      // 2. Geocode destination using Nominatim (free, no key needed)
+      const geocodeRes = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(destination)}&format=json&limit=1`,
+        { headers: { 'User-Agent': 'LookoutApp/1.0' } }
+      );
+      const geocodeData = await geocodeRes.json();
+      if (!geocodeData.length) {
+        Alert.alert('Place not found', `Could not find "${destination}". Try adding more detail, e.g. "Connaught Place, Delhi".`);
+        setLoading(false);
+        return;
+      }
+      const destLat = parseFloat(geocodeData[0].lat);
+      const destLng = parseFloat(geocodeData[0].lon);
 
-      const res  = await fetch(url);
-      const data = await res.json();
-
-      if (data.status !== 'OK') {
-        Alert.alert('Route not found', `Could not find a route to "${destination}". Try a more specific address.`);
+      // 3. Fetch route using OSRM (free, no key needed)
+      // OSRM expects coordinates as lng,lat
+      const osrmRes = await fetch(
+        `https://router.project-osrm.org/route/v1/driving/${longitude},${latitude};${destLng},${destLat}?overview=full&geometries=polyline`
+      );
+      const osrmData = await osrmRes.json();
+      if (osrmData.code !== 'Ok' || !osrmData.routes?.length) {
+        Alert.alert('Route not found', `Could not find a driving route to "${destination}".`);
         setLoading(false);
         return;
       }
 
-      // 3. Decode polyline and extract summary
-      const leg      = data.routes[0].legs[0];
-      const encoded  = data.routes[0].overview_polyline.points;
-      const points   = decodePolyline(encoded);
+      // 4. Decode polyline and extract summary
+      const route   = osrmData.routes[0];
+      const points  = decodePolyline(route.geometry);
+      const distKm  = (route.distance / 1000).toFixed(1);
+      const durMins = Math.round(route.duration / 60);
+      const durText = durMins < 60
+        ? `${durMins} min`
+        : `${Math.floor(durMins / 60)}h ${durMins % 60}m`;
 
       setRouteSummary({
-        distance: leg.distance.text,
-        duration: leg.duration.text,
+        distance: `${distKm} km`,
+        duration: durText,
       });
 
       // 4. Filter potholes near the route
