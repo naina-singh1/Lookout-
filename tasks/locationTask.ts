@@ -6,6 +6,8 @@ import * as Location from 'expo-location';
 import { Pothole } from '../constants/theme';
 import { checkProximity } from '../services/proximity';
 import { sendPotholeNotification } from '../services/notifications';
+import { getAlertPrefs } from '../services/alertPrefs';
+import { loadCachedPotholes } from '../services/potholes';
 
 export const BACKGROUND_LOCATION_TASK = 'lookout-bg-location';
 
@@ -55,6 +57,10 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: any) =>
 
   // 2. Run proximity check independently for push notifications.
   //    This fires whether the app is foregrounded, backgrounded, or closed.
+  //    On cold start, _bgPotholes is empty — load from AsyncStorage cache.
+  if (_bgPotholes.length === 0) {
+    _bgPotholes = await loadCachedPotholes();
+  }
   if (_bgPotholes.length === 0) return;
 
   const { newAlerts, updatedAlertedIds } = checkProximity(
@@ -64,13 +70,16 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: any) =>
   );
   _bgAlertedIds = updatedAlertedIds;
 
-  // Send one OS push notification per new proximity alert
-  for (const alert of newAlerts) {
-    await sendPotholeNotification(
-      alert.pothole.location,
-      alert.pothole.severity,
-      alert.distanceMeters,
-    );
+  // Send one OS push notification per new proximity alert (if enabled)
+  const { proximityAlerts } = await getAlertPrefs();
+  if (proximityAlerts) {
+    for (const alert of newAlerts) {
+      await sendPotholeNotification(
+        alert.pothole.location,
+        alert.pothole.severity,
+        alert.distanceMeters,
+      );
+    }
   }
 });
 
