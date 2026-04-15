@@ -2,6 +2,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { C, R, Severity, severityColor, severityBg } from '../constants/theme';
+import { useLanguage } from '../contexts/LanguageContext';
 
 export function Wordmark({ size = 22 }: { size?: number }) {
   return (
@@ -89,10 +90,11 @@ export function DrivingAlert({
   }, [severity]);
 
   const color = severityColor(severity);
+  const { t } = useLanguage();
   const distText = distanceMeters < 1000
     ? `${Math.round(distanceMeters)}m`
     : `${(distanceMeters / 1000).toFixed(1)}km`;
-  const urgency = distanceMeters <= 30 ? 'SLOW DOWN NOW' : distanceMeters <= 60 ? 'Slow down' : 'Ease off';
+  const urgency = distanceMeters <= 30 ? t.slowDownNow : distanceMeters <= 60 ? t.slowDown : t.easeOff;
   const icon = severity === 'severe' ? '🚨' : severity === 'moderate' ? '⚠️' : '⚡';
 
   return (

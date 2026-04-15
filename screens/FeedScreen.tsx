@@ -7,15 +7,16 @@ import {
 import { C, R, Pothole, Severity } from '../constants/theme';
 import { ScreenHeader, PotholeCard } from '../components/ui';
 import { subscribePotholes } from '../services/potholes';
-
-const FILTERS: { label: string; value: Severity | 'all' }[] = [
-  { label: 'All', value: 'all' },
-  { label: 'Severe', value: 'severe' },
-  { label: 'Moderate', value: 'moderate' },
-  { label: 'Minor', value: 'minor' },
-];
+import { useLanguage } from '../contexts/LanguageContext';
 
 export default function FeedScreen() {
+  const { t } = useLanguage();
+  const FILTERS: { label: string; value: Severity | 'all' }[] = [
+    { label: t.filterAll,      value: 'all' },
+    { label: t.filterSevere,   value: 'severe' },
+    { label: t.filterModerate, value: 'moderate' },
+    { label: t.filterMinor,    value: 'minor' },
+  ];
   const [filter, setFilter] = useState<Severity | 'all'>('all');
   const [potholes, setPotholes] = useState<Pothole[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,7 +34,7 @@ export default function FeedScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor={C.bg} />
-      <ScreenHeader title="Nearby Feed" subtitle={`${data.length} report${data.length !== 1 ? 's' : ''}`} />
+      <ScreenHeader title={t.nearbyFeed} subtitle={t.reports(data.length)} />
 
       {/* Filter chips */}
       <View style={styles.chips}>
@@ -53,7 +54,7 @@ export default function FeedScreen() {
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator color={C.accent} size="large" />
-          <Text style={styles.loadingText}>Loading reports…</Text>
+          <Text style={styles.loadingText}>{t.loadingReports}</Text>
         </View>
       ) : (
         <FlatList
@@ -65,10 +66,10 @@ export default function FeedScreen() {
             <View style={styles.empty}>
               <Text style={styles.emptyIcon}>🕳</Text>
               <Text style={styles.emptyText}>
-                {filter === 'all' ? 'No potholes reported yet' : `No ${filter} potholes`}
+                {filter === 'all' ? t.noReportsYet : `${t.filterAll === 'All' ? 'No' : 'कोई'} ${filter === 'severe' ? t.filterSevere : filter === 'moderate' ? t.filterModerate : t.filterMinor} ${t.navFeed === 'Feed' ? 'potholes' : 'गड्ढे नहीं'}`}
               </Text>
               <Text style={styles.emptySub}>
-                {filter === 'all' ? 'Use the Map tab to report one!' : 'Try a different filter'}
+                {filter === 'all' ? t.useMapTab : t.tryDifferentFilter}
               </Text>
             </View>
           }

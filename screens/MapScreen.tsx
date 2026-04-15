@@ -19,6 +19,7 @@ import {
   requestNotificationPermission, setupAndroidNotificationChannel,
 } from '../services/notifications';
 import { getAlertPrefs } from '../services/alertPrefs';
+import { useLanguage } from '../contexts/LanguageContext';
 
 const SEVERITY_OPTIONS: { label: string; value: Severity; color: string }[] = [
   { label: '🔴 Severe',   value: 'severe',   color: C.severe },
@@ -29,6 +30,7 @@ const SEVERITY_OPTIONS: { label: string; value: Severity; color: string }[] = [
 const DELHI = { latitude: 28.6139, longitude: 77.2090, latitudeDelta: 0.08, longitudeDelta: 0.08 };
 
 export default function MapScreen() {
+  const { t } = useLanguage();
   const mapRef = useRef<MapView>(null);
   const locationSub = useRef<Location.LocationSubscription | null>(null);
   const alertedIdsRef = useRef<Set<string>>(new Set());
@@ -167,7 +169,7 @@ export default function MapScreen() {
 
   async function handleReport() {
     if (!userLocation) {
-      Alert.alert('Location needed', 'Enable location access to report a pothole.');
+      Alert.alert(t.locationNeeded, t.locationNeededMsg);
       return;
     }
     setReporting(true);
@@ -179,7 +181,7 @@ export default function MapScreen() {
       const sublocation = place?.city || place?.region || '';
       await reportPothole(userLocation.latitude, userLocation.longitude, selectedSeverity, location, sublocation);
       setReportModal(false);
-      Alert.alert('Reported!', `${selectedSeverity} pothole logged at ${location}.`);
+      Alert.alert(t.reportedTitle, t.reportedMsg(selectedSeverity, location));
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -205,7 +207,7 @@ export default function MapScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor={C.bg} />
-      <ScreenHeader title="Delhi" subtitle={`${potholes.length} report${potholes.length !== 1 ? 's' : ''}`} />
+      <ScreenHeader title={t.city} subtitle={t.reports(potholes.length)} />
 
       {/* Google Map */}
       <View style={styles.mapContainer}>
@@ -249,7 +251,7 @@ export default function MapScreen() {
 
         {/* Report FAB */}
         <TouchableOpacity style={styles.fab} onPress={() => setReportModal(true)}>
-          <Text style={styles.fabText}>+ Report</Text>
+          <Text style={styles.fabText}>{t.reportBtn}</Text>
         </TouchableOpacity>
 
       </View>
@@ -268,10 +270,10 @@ export default function MapScreen() {
       <View style={styles.tray}>
         <View style={styles.trayHandle} />
         <Text style={styles.trayTitle}>
-          {nearby.length > 0 ? `Nearest ${nearby.length} Potholes` : 'No potholes nearby'}
+          {nearby.length > 0 ? t.nearestPotholes(nearby.length) : t.noPotholesNearby}
         </Text>
         {potholes.length === 0 ? (
-          <Text style={styles.emptyText}>No potholes reported yet — be the first!</Text>
+          <Text style={styles.emptyText}>{t.noPotholesYet}</Text>
         ) : (
           <ScrollView showsVerticalScrollIndicator={false}>
             {nearby.map(p => <PotholeCard key={p.id} {...p} />)}
@@ -284,8 +286,8 @@ export default function MapScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalSheet}>
             <View style={styles.trayHandle} />
-            <Text style={styles.modalTitle}>Report a Pothole</Text>
-            <Text style={styles.modalSub}>at your current location</Text>
+            <Text style={styles.modalTitle}>{t.reportModalTitle}</Text>
+            <Text style={styles.modalSub}>{t.reportModalSub}</Text>
 
             <View style={styles.severityRow}>
               {SEVERITY_OPTIONS.map(opt => (
@@ -308,12 +310,12 @@ export default function MapScreen() {
             >
               {reporting
                 ? <ActivityIndicator color="#fff" />
-                : <Text style={styles.submitBtnText}>Submit Report</Text>
+                : <Text style={styles.submitBtnText}>{t.submitReport}</Text>
               }
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => setReportModal(false)} style={styles.cancelBtn}>
-              <Text style={styles.cancelText}>Cancel</Text>
+              <Text style={styles.cancelText}>{t.cancel}</Text>
             </TouchableOpacity>
           </View>
         </View>

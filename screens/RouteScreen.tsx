@@ -10,6 +10,7 @@ import { C, R, Pothole } from '../constants/theme';
 import { ScreenHeader, SevBadge } from '../components/ui';
 import { subscribePotholes } from '../services/potholes';
 import { getDistanceMeters } from '../services/proximity';
+import { useLanguage } from '../contexts/LanguageContext';
 
 const ROUTE_BUFFER_M = 150; // potholes within this distance of the route are included
 
@@ -44,6 +45,7 @@ function isPotholeOnRoute(
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function RouteScreen() {
+  const { t } = useLanguage();
   const [destination, setDestination] = useState('');
   const [loading, setLoading]         = useState(false);
   const [searched, setSearched]       = useState(false);
@@ -71,7 +73,7 @@ export default function RouteScreen() {
       // 1. Get user's current location
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Location needed', 'Enable location to use Route Planner.');
+        Alert.alert(t.locationNeeded, t.locationNeededRoute);
         setLoading(false);
         return;
       }
@@ -85,7 +87,7 @@ export default function RouteScreen() {
       );
       const geocodeData = await geocodeRes.json();
       if (!geocodeData.length) {
-        Alert.alert('Place not found', `Could not find "${destination}". Try adding more detail, e.g. "Connaught Place, Delhi".`);
+        Alert.alert(t.placeNotFound, t.placeNotFoundMsg(destination));
         setLoading(false);
         return;
       }
@@ -99,7 +101,7 @@ export default function RouteScreen() {
       );
       const osrmData = await osrmRes.json();
       if (osrmData.code !== 'Ok' || !osrmData.routes?.length) {
-        Alert.alert('Route not found', `Could not find a driving route to "${destination}".`);
+        Alert.alert(t.routeNotFound, t.routeNotFoundMsg(destination));
         setLoading(false);
         return;
       }
@@ -148,17 +150,17 @@ export default function RouteScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor={C.bg} />
-      <ScreenHeader title="Route Planner" />
+      <ScreenHeader title={t.routePlanner} />
 
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
 
         {/* Search */}
         <View style={styles.searchBox}>
-          <Text style={styles.searchLabel}>Destination</Text>
+          <Text style={styles.searchLabel}>{t.destination}</Text>
           <View style={styles.inputRow}>
             <TextInput
               style={styles.input}
-              placeholder="Where to? e.g. Connaught Place"
+              placeholder={t.whereTo}
               placeholderTextColor={C.textFaint}
               value={destination}
               onChangeText={setDestination}
@@ -172,7 +174,7 @@ export default function RouteScreen() {
             >
               {loading
                 ? <ActivityIndicator color="#fff" size="small" />
-                : <Text style={styles.goBtnText}>Go</Text>
+                : <Text style={styles.goBtnText}>{t.go}</Text>
               }
             </TouchableOpacity>
           </View>
@@ -182,21 +184,21 @@ export default function RouteScreen() {
           <>
             {/* Route meta */}
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Route Summary</Text>
+              <Text style={styles.cardTitle}>{t.routeSummary}</Text>
               <View style={styles.statRow}>
                 <View style={styles.stat}>
                   <Text style={styles.statNum}>{routeSummary.distance}</Text>
-                  <Text style={styles.statLabel}>Distance</Text>
+                  <Text style={styles.statLabel}>{t.distance}</Text>
                 </View>
                 <View style={styles.stat}>
                   <Text style={styles.statNum}>{routeSummary.duration}</Text>
-                  <Text style={styles.statLabel}>Est. time</Text>
+                  <Text style={styles.statLabel}>{t.estTime}</Text>
                 </View>
                 <View style={styles.stat}>
                   <Text style={[styles.statNum, severeCount > 0 && { color: C.severe }]}>
                     {routePotholes.length}
                   </Text>
-                  <Text style={styles.statLabel}>Potholes</Text>
+                  <Text style={styles.statLabel}>{t.potholes}</Text>
                 </View>
               </View>
             </View>
@@ -206,21 +208,15 @@ export default function RouteScreen() {
               <View style={styles.warningBanner}>
                 <Text style={styles.warningIcon}>⚠️</Text>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.warningTitle}>
-                    {severeCount} severe pothole{severeCount > 1 ? 's' : ''} on this route
-                  </Text>
-                  <Text style={styles.warningSub}>
-                    {moderateCount > 0 ? `+ ${moderateCount} moderate · ` : ''}Consider an alternate route
-                  </Text>
+                  <Text style={styles.warningTitle}>{t.severePotholeWarning(severeCount)}</Text>
+                  <Text style={styles.warningSub}>{t.considerAlternate(moderateCount)}</Text>
                 </View>
               </View>
             )}
 
             {/* Potholes on route */}
             <Text style={styles.sectionTitle}>
-              {routePotholes.length > 0
-                ? `${routePotholes.length} Pothole${routePotholes.length > 1 ? 's' : ''} on Route`
-                : 'No potholes on this route 🎉'}
+              {routePotholes.length > 0 ? t.potholesOnRoute(routePotholes.length) : t.noPotholesOnRoute}
             </Text>
             {routePotholes.map(p => (
               <View key={p.id} style={styles.routeItem}>
@@ -230,7 +226,7 @@ export default function RouteScreen() {
                 </View>
                 <View style={{ alignItems: 'flex-end', gap: 4 }}>
                   <SevBadge severity={p.severity} />
-                  <Text style={styles.routeDist}>{p.distanceToRoute}m from route</Text>
+                  <Text style={styles.routeDist}>{p.distanceToRoute}m {t.fromRoute}</Text>
                 </View>
               </View>
             ))}
@@ -240,8 +236,8 @@ export default function RouteScreen() {
         {!searched && !loading && (
           <View style={styles.empty}>
             <Text style={styles.emptyIcon}>🛣</Text>
-            <Text style={styles.emptyText}>Enter a destination</Text>
-            <Text style={styles.emptySub}>We'll warn you about potholes on the way</Text>
+            <Text style={styles.emptyText}>{t.enterDestination}</Text>
+            <Text style={styles.emptySub}>{t.routeSubtitle}</Text>
           </View>
         )}
 

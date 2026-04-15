@@ -13,6 +13,7 @@ import ProfileScreen from './screens/ProfileScreen';
 import AuthScreen from './screens/AuthScreen';
 
 import { C } from './constants/theme';
+import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 
 const Tab = createBottomTabNavigator();
 
@@ -24,6 +25,36 @@ function TabIcon({ icon, label, focused }: { icon: string; label: string; focuse
         {label}
       </Text>
     </View>
+  );
+}
+
+function AppInner() {
+  const { t } = useLanguage();
+  return (
+    <NavigationContainer>
+      <Tab.Navigator
+        screenOptions={{
+          headerShown: false,
+          tabBarStyle: {
+            backgroundColor: '#0e0e12',
+            borderTopWidth: 0.5,
+            borderTopColor: '#1e1e28',
+            height: 70,
+            paddingBottom: 10,
+          },
+          tabBarShowLabel: false,
+        }}
+      >
+        <Tab.Screen name="Map" component={MapScreen}
+          options={{ tabBarIcon: ({ focused }) => <TabIcon icon="🗺" label={t.navMap} focused={focused} /> }} />
+        <Tab.Screen name="Feed" component={FeedScreen}
+          options={{ tabBarIcon: ({ focused }) => <TabIcon icon="📋" label={t.navFeed} focused={focused} /> }} />
+        <Tab.Screen name="Route" component={RouteScreen}
+          options={{ tabBarIcon: ({ focused }) => <TabIcon icon="🛣" label={t.navRoute} focused={focused} /> }} />
+        <Tab.Screen name="Profile" component={ProfileScreen}
+          options={{ tabBarIcon: ({ focused }) => <TabIcon icon="👤" label={t.navMe} focused={focused} /> }} />
+      </Tab.Navigator>
+    </NavigationContainer>
   );
 }
 
@@ -47,54 +78,9 @@ export default function App() {
     );
   }
 
-  if (!user) {
-    return <AuthScreen />;
-  }
-
   return (
-    <NavigationContainer>
-      <Tab.Navigator
-        screenOptions={{
-          headerShown: false,
-          tabBarStyle: {
-            backgroundColor: '#0e0e12',
-            borderTopWidth: 0.5,
-            borderTopColor: '#1e1e28',
-            height: 70,
-            paddingBottom: 10,
-          },
-          tabBarShowLabel: false,
-        }}
-      >
-        <Tab.Screen
-          name="Map"
-          component={MapScreen}
-          options={{
-            tabBarIcon: ({ focused }) => <TabIcon icon="🗺" label="Map" focused={focused} />,
-          }}
-        />
-        <Tab.Screen
-          name="Feed"
-          component={FeedScreen}
-          options={{
-            tabBarIcon: ({ focused }) => <TabIcon icon="📋" label="Feed" focused={focused} />,
-          }}
-        />
-        <Tab.Screen
-          name="Route"
-          component={RouteScreen}
-          options={{
-            tabBarIcon: ({ focused }) => <TabIcon icon="🛣" label="Route" focused={focused} />,
-          }}
-        />
-        <Tab.Screen
-          name="Profile"
-          component={ProfileScreen}
-          options={{
-            tabBarIcon: ({ focused }) => <TabIcon icon="👤" label="Me" focused={focused} />,
-          }}
-        />
-      </Tab.Navigator>
-    </NavigationContainer>
+    <LanguageProvider>
+      {user ? <AppInner /> : <AuthScreen />}
+    </LanguageProvider>
   );
 }
