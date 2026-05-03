@@ -83,6 +83,18 @@ const translations = {
     signOut:               'Sign Out',
     language:              'Language',
 
+    // Points + leaderboard
+    leaderboard:           '🏆 Leaderboard',
+    perReport:             'per report',
+    perResolve:            'per resolve',
+
+    // Resolve
+    markFixed:             'Mark as Fixed',
+    fixedTitle:            'Pothole Resolved!',
+    fixedMsg:              (loc: string) => `${loc} has been marked as fixed and removed from the map.`,
+    fixedConfirm:          'Are you sure this pothole has been fixed?',
+    confirmBtn:            'Yes, it\'s fixed',
+
     // Notifications
     notifSlowDownNow:      'SLOW DOWN NOW',
     notifSlowDown:         'Slow down ahead',
@@ -170,6 +182,18 @@ const translations = {
     noReportsProfile:      'अभी तक कोई रिपोर्ट नहीं — मानचित्र टैब से रिपोर्ट करें!',
     signOut:               'साइन आउट',
     language:              'भाषा',
+
+    // Points + leaderboard
+    leaderboard:           '🏆 लीडरबोर्ड',
+    perReport:             'प्रति रिपोर्ट',
+    perResolve:            'प्रति समाधान',
+
+    // Resolve
+    markFixed:             'ठीक हो गया',
+    fixedTitle:            'गड्ढा ठीक हो गया!',
+    fixedMsg:              (loc: string) => `${loc} को ठीक के रूप में चिह्नित किया गया और मानचित्र से हटाया गया।`,
+    fixedConfirm:          'क्या आप सुनिश्चित हैं कि यह गड्ढा ठीक हो गया है?',
+    confirmBtn:            'हाँ, ठीक हो गया',
 
     // Notifications
     notifSlowDownNow:      'अभी धीमे हों!',

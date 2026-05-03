@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>🚗 Bump Detector</title>
+
+<!-- Firebase (compat SDK - works in plain HTML) -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background:#0a0a0f; color:#e0e0e0; font-family:'Courier New',monospace; min-height:100vh; overflow-x:hidden; }
+
+#header {
+  background:linear-gradient(135deg,#1a1a2e,#16213e);
+  padding:12px 16px; border-bottom:2px solid #00ff88;
+  display:flex; align-items:center; justify-content:space-between;
+  position:sticky; top:0; z-index:100;
+}
+#header h1 { font-size:17px; color:#00ff88; letter-spacing:1px; }
+.status-dot { width:11px;height:11px;border-radius:50%;background:#ff4444;display:inline-block;margin-right:5px;animation:pred 1s infinite; }
+.status-dot.active { background:#00ff88;animation:pgreen 1s infinite; }
+@keyframes pred{0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes pgreen{0%,100%{box-shadow:0 0 0 0 rgba(0,255,136,.7)}70%{box-shadow:0 0 0 8px rgba(0,255,136,0)}}
+
+#start-btn { background:#00ff88;color:#0a0a0f;border:none;padding:8px 18px;border-radius:20px;font-weight:bold;font-size:14px;cursor:pointer;letter-spacing:1px; }
+#start-btn:active { transform:scale(.95); }
+#start-btn.stop { background:#ff4444;color:white; }
+
+/* BUMP ALERT */
+#bump-alert {
+  display:none;position:fixed;top:0;left:0;right:0;bottom:0;
+  background:rgba(255,68,68,.96);z-index:999;
+  flex-direction:column;align-items:center;justify-content:center;text-align:center;
+  animation:shake .3s ease;
+}
+#bump-alert.show { display:flex; }
+@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-10px)}40%{transform:translateX(10px)}60%{transform:translateX(-6px)}80%{transform:translateX(6px)}}
+#bump-alert .bicon { font-size:72px;margin-bottom:14px; }
+#bump-alert h2 { font-size:30px;color:white;margin-bottom:6px;font-weight:900; }
+#bump-alert .bval { font-size:16px;color:#ffdddd;margin-bottom:26px; }
+#bump-alert .bq { font-size:22px;color:white;margin-bottom:22px;font-weight:bold; }
+.feedback-btns { display:flex;gap:20px; }
+.feedback-btns button { padding:18px 40px;font-size:22px;font-weight:bold;border:none;border-radius:16px;cursor:pointer;min-width:110px; }
+.btn-yes { background:white;color:#cc0000; }
+.btn-no  { background:rgba(255,255,255,.2);color:white;border:2px solid white; }
+.feedback-btns button:active { transform:scale(.95); }
+#bump-alert .dismiss { margin-top:14px;font-size:12px;color:rgba(255,255,255,.6); }
+
+/* DEVICE NAME SETUP */
+#device-setup {
+  background:#12121f;border:1px solid #ffaa00;border-radius:10px;
+  margin:12px 16px;padding:14px;
+}
+#device-setup label { font-size:11px;color:#ffaa00;display:block;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px; }
+#device-setup input {
+  width:100%;background:#0a0a0f;border:1px solid #333;color:#e0e0e0;
+  padding:8px 12px;border-radius:8px;font-family:'Courier New',monospace;font-size:14px;
+}
+#device-setup .gps-row { display:flex;justify-content:space-between;align-items:center;margin-top:10px; }
+#device-setup .gps-status { font-size:11px;color:#666; }
+#device-setup .gps-status.ok { color:#00ff88; }
+
+/* SYNC STATUS BAR */
+#sync-bar {
+  background:#0d0d1a;border-bottom:1px solid #1a1a3a;
+  padding:6px 16px;display:flex;align-items:center;justify-content:space-between;font-size:11px;
+}
+#sync-bar .sync-label { color:#666; }
+#sync-bar .sync-val   { color:#7799ff; }
+#sync-bar .sync-ok    { color:#00ff88; }
+#sync-bar .sync-err   { color:#ff4444; }
+
+/* SENSOR GRID */
+.section { padding:12px 16px; }
+.section h2 { font-size:11px;color:#888;text-transform:uppercase;letter-spacing:2px;margin-bottom:10px; }
+.sensor-grid { display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:4px; }
+.sensor-card { background:#12121f;border:1px solid #2a2a4a;border-radius:10px;padding:10px 8px;text-align:center; }
+.sensor-card .label { font-size:10px;color:#888;margin-bottom:4px;text-transform:uppercase; }
+.sensor-card .value { font-size:18px;font-weight:bold;color:#00ff88;font-variant-numeric:tabular-nums;transition:color .2s; }
+.sensor-card .value.warn { color:#ffaa00; }
+.sensor-card .value.danger { color:#ff4444; }
+.sensor-card .unit { font-size:10px;color:#555;margin-top:2px; }
+
+#g-bar-wrap { background:#12121f;border:1px solid #2a2a4a;border-radius:10px;padding:10px 14px;margin:0 16px 4px; }
+#g-bar-wrap .label { font-size:11px;color:#888;display:flex;justify-content:space-between;margin-bottom:6px; }
+#g-bar-track { background:#1e1e30;height:18px;border-radius:9px;overflow:hidden; }
+#g-bar-fill { height:100%;border-radius:9px;background:linear-gradient(90deg,#00ff88,#ffaa00,#ff4444);background-size:300% 100%;background-position:0% 50%;transition:width .05s linear,background-position .05s;width:0%; }
+
+.threshold-wrap { background:#12121f;border:1px solid #2a2a4a;border-radius:10px;padding:12px 14px;margin:0 16px 4px; }
+.threshold-wrap label { font-size:11px;color:#888;display:flex;justify-content:space-between; }
+.threshold-wrap input[type=range] { width:100%;margin-top:8px;accent-color:#00ff88; }
+
+.orient-grid { display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px; }
+
+.stats-row { display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:0 16px;margin-bottom:4px; }
+.stat-card { background:#12121f;border:1px solid #2a2a4a;border-radius:10px;padding:10px 6px;text-align:center; }
+.stat-card .s-label { font-size:9px;color:#666;text-transform:uppercase;margin-bottom:4px; }
+.stat-card .s-value { font-size:17px;font-weight:bold;color:#7799ff; }
+
+#bump-history { background:#12121f;border:1px solid #2a2a4a;border-radius:10px;margin:0 16px;max-height:160px;overflow-y:auto; }
+#bump-history .bh-row { padding:8px 12px;border-bottom:1px solid #1e1e30;font-size:11px;display:flex;justify-content:space-between;align-items:center; }
+#bump-history .bh-row:last-child { border-bottom:none; }
+#bump-history .bh-time { color:#666; }
+#bump-history .bh-val { color:#ff8844;font-weight:bold; }
+.bh-tag-yes { color:#00ff88;font-size:11px;font-weight:bold; }
+.bh-tag-no  { color:#ff4444;font-size:11px; }
+.bh-tag-auto{ color:#aaa;font-size:11px;font-style:italic; }
+
+#log-box { background:#050510;border:1px solid #1a1a3a;border-radius:10px;margin:0 16px;height:130px;overflow-y:auto;padding:8px;font-size:10px;color:#446644;line-height:1.6; }
+.log-bump { color:#ff8844; }
+.log-confirm { color:#00ff88; }
+.log-deny { color:#ff4444; }
+.log-sync { color:#7799ff; }
+
+.dl-btn { display:block;margin:10px 16px;padding:12px;background:#1a1a2e;border:1px solid #00ff88;color:#00ff88;border-radius:10px;text-align:center;font-size:14px;cursor:pointer;font-family:'Courier New',monospace;font-weight:bold;letter-spacing:1px; }
+.dl-btn:active { background:#00ff88;color:#0a0a0f; }
+.spacer { height:30px; }
+
+#waveform-canvas { width:100%;height:70px;display:block;border-radius:8px;background:#050510;border:1px solid #1a1a3a; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div id="header">
+  <div><span class="status-dot" id="status-dot"></span><span>🚗 BUMP DETECTOR</span></div>
+  <button id="start-btn" onclick="toggleSensors()">START</button>
+</div>
+
+<!-- SYNC STATUS -->
+<div id="sync-bar">
+  <span class="sync-label">☁️ Firebase</span>
+  <span id="sync-status" class="sync-val">Not connected</span>
+  <span id="sync-count" class="sync-val">0 synced</span>
+</div>
+
+<!-- DEVICE SETUP -->
+<div id="device-setup">
+  <label>📱 Device Name (shows in dashboard)</label>
+  <input type="text" id="device-name" placeholder="e.g. Gopika-iPhone / Car-1" value="">
+  <div class="gps-row">
+    <span class="gps-status" id="gps-status">📍 GPS: not started</span>
+    <span style="font-size:11px;color:#555">GPS auto-starts with recording</span>
+  </div>
+</div>
+
+<!-- BUMP ALERT OVERLAY -->
+<div id="bump-alert">
+  <div class="bicon">💥</div>
+  <h2>BUMP DETECTED!</h2>
+  <div class="bval" id="bump-alert-val">Peak: 0.00 m/s²</div>
+  <div class="bq">Did you actually hit a bump?</div>
+  <div class="feedback-btns">
+    <button class="btn-yes" onclick="bumpFeedback(true)">✅ YES</button>
+    <button class="btn-no"  onclick="bumpFeedback(false)">❌ NO</button>
+  </div>
+  <div class="dismiss">Auto-dismissing in <span id="countdown">8</span>s</div>
+</div>
+
+<!-- LIVE SENSOR: ACCELERATION -->
+<div class="section">
+  <h2>⚡ Acceleration (m/s²)</h2>
+  <div class="sensor-grid">
+    <div class="sensor-card"><div class="label">X</div><div class="value" id="ax">0.00</div><div class="unit">m/s²</div></div>
+    <div class="sensor-card"><div class="label">Y</div><div class="value" id="ay">0.00</div><div class="unit">m/s²</div></div>
+    <div class="sensor-card"><div class="label">Z</div><div class="value" id="az">0.00</div><div class="unit">m/s²</div></div>
+  </div>
+  <div class="sensor-grid">
+    <div class="sensor-card"><div class="label">|Total|</div><div class="value" id="atotal">0.00</div><div class="unit">m/s²</div></div>
+    <div class="sensor-card"><div class="label">Peak</div><div class="value" id="apeak">0.00</div><div class="unit">m/s²</div></div>
+    <div class="sensor-card"><div class="label">Gravity</div><div class="value" id="grav">9.81</div><div class="unit">m/s²</div></div>
+  </div>
+</div>
+
+<div id="g-bar-wrap">
+  <div class="label"><span>G-Force Level</span><span id="g-label-val">0.00 m/s²</span></div>
+  <div id="g-bar-track"><div id="g-bar-fill"></div></div>
+</div>
+
+<div class="section" style="padding-bottom:0">
+  <h2>📈 Live Waveform</h2>
+  <canvas id="waveform-canvas"></canvas>
+</div>
+
+<div class="section">
+  <h2>🧭 Orientation (°)</h2>
+  <div class="orient-grid">
+    <div class="sensor-card"><div class="label">Alpha</div><div class="value" id="oa">—</div><div class="unit">yaw</div></div>
+    <div class="sensor-card"><div class="label">Beta</div><div class="value" id="ob">—</div><div class="unit">pitch</div></div>
+    <div class="sensor-card"><div class="label">Gamma</div><div class="value" id="og">—</div><div class="unit">roll</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>🌀 Gyroscope (°/s)</h2>
+  <div class="sensor-grid">
+    <div class="sensor-card"><div class="label">X</div><div class="value" id="gx">0.00</div><div class="unit">°/s</div></div>
+    <div class="sensor-card"><div class="label">Y</div><div class="value" id="gy">0.00</div><div class="unit">°/s</div></div>
+    <div class="sensor-card"><div class="label">Z</div><div class="value" id="gz">0.00</div><div class="unit">°/s</div></div>
+  </div>
+</div>
+
+<div class="threshold-wrap">
+  <label>
+    <span>🎚️ Bump Threshold</span>
+    <span id="thresh-val" style="color:#ffaa00;font-weight:bold">15.0 m/s²</span>
+  </label>
+  <input type="range" id="thresh-slider" min="5" max="50" step="0.5" value="15" oninput="updateThreshold(this.value)">
+</div>
+
+<div style="padding:8px 16px 0;font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">📊 Session Stats</div>
+<div class="stats-row">
+  <div class="stat-card"><div class="s-label">Bumps</div><div class="s-value" id="stat-bumps">0</div></div>
+  <div class="stat-card"><div class="s-label">Confirmed</div><div class="s-value" id="stat-yes" style="color:#00ff88">0</div></div>
+  <div class="stat-card"><div class="s-label">Denied</div><div class="s-value" id="stat-no" style="color:#ff4444">0</div></div>
+  <div class="stat-card"><div class="s-label">Max G</div><div class="s-value" id="stat-maxg" style="color:#ff8844">0.0</div></div>
+</div>
+
+<div class="section" style="padding-bottom:4px"><h2>💥 Bump History</h2></div>
+<div id="bump-history"><div class="empty" style="color:#444;text-align:center;padding:20px;font-size:13px">No bumps yet</div></div>
+
+<div class="section" style="padding-bottom:4px"><h2>📝 Data Log</h2></div>
+<div id="log-box"><span style="color:#333">// Log starts when recording begins...</span></div>
+
+<button class="dl-btn" onclick="downloadLog()">⬇ DOWNLOAD LOCAL LOG (.csv)</button>
+<div class="spacer"></div>
+
+<script>
+// ============================================================
+// 🔥 FIREBASE CONFIG — paste your config object here
+// ============================================================
+const FIREBASE_CONFIG = {
+  apiKey:            "AIzaSyD1kAXu5Tk8pr-o2IbcG2JuKRnqbH0vKsg",
+  authDomain:        "lookout-7d0fa.firebaseapp.com",
+  projectId:         "lookout-7d0fa",
+  storageBucket:     "lookout-7d0fa.firebasestorage.app",
+  messagingSenderId: "443067175529",
+  appId:             "1:443067175529:web:d6ffd04c41b640b4a548f8"
+};
+// ============================================================
+
+// Firestore collection name
+const COLLECTION = "bump_events";
+
+let db = null;
+let firebaseReady = false;
+let syncCount = 0;
+
+function initFirebase() {
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.firestore();
+    firebaseReady = true;
+    setSyncStatus('✅ Connected', 'sync-ok');
+    logLine('// Firebase connected', 'log-sync');
+  } catch(e) {
+    setSyncStatus('❌ ' + e.message, 'sync-err');
+    logLine('// Firebase error: ' + e.message, 'log-deny');
+  }
+}
+
+function setSyncStatus(msg, cls) {
+  const el = document.getElementById('sync-status');
+  el.textContent = msg;
+  el.className = cls;
+}
+
+// ============================================================
+// DEVICE IDENTITY
+// ============================================================
+let deviceId = localStorage.getItem('bump_device_id');
+if (!deviceId) {
+  deviceId = 'device_' + Math.random().toString(36).substr(2,8);
+  localStorage.setItem('bump_device_id', deviceId);
+}
+
+// Pre-fill device name from storage
+const savedName = localStorage.getItem('bump_device_name');
+if (savedName) document.getElementById('device-name').value = savedName;
+
+document.getElementById('device-name').addEventListener('input', e => {
+  localStorage.setItem('bump_device_name', e.target.value);
+});
+
+function getDeviceName() {
+  return document.getElementById('device-name').value.trim() || deviceId;
+}
+
+// ============================================================
+// GPS
+// ============================================================
+let gpsPos = null;
+let gpsWatchId = null;
+
+function startGPS() {
+  if (!navigator.geolocation) {
+    document.getElementById('gps-status').textContent = '📍 GPS: not available';
+    return;
+  }
+  gpsWatchId = navigator.geolocation.watchPosition(
+    pos => {
+      gpsPos = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy };
+      document.getElementById('gps-status').textContent =
+        `📍 GPS: ${gpsPos.lat.toFixed(5)}, ${gpsPos.lng.toFixed(5)}`;
+      document.getElementById('gps-status').className = 'gps-status ok';
+    },
+    err => {
+      document.getElementById('gps-status').textContent = '📍 GPS: ' + err.message;
+    },
+    { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
+  );
+}
+
+function stopGPS() {
+  if (gpsWatchId !== null) {
+    navigator.geolocation.clearWatch(gpsWatchId);
+    gpsWatchId = null;
+    gpsPos = null;
+    document.getElementById('gps-status').textContent = '📍 GPS: stopped';
+    document.getElementById('gps-status').className = 'gps-status';
+  }
+}
+
+// ============================================================
+// STATE
+// ============================================================
+let recording = false;
+let threshold = 15.0;
+let logEntries = [];
+let csvLines = [];
+let bumpCount = 0, yesCount = 0, noCount = 0;
+let sessionMaxG = 0;
+let waveData = new Array(200).fill(0);
+let bumpAlertOpen = false;
+let pendingBump = null;
+let countdownTimer = null;
+let countdownVal = 8;
+let lastBumpTime = 0;
+const BUMP_COOLDOWN = 2000;
+
+const canvas = document.getElementById('waveform-canvas');
+const ctx2d = canvas.getContext('2d');
+
+let latestSensor = { ax:0,ay:0,az:0,atotal:0,gx:0,gy:0,gz:0,alpha:null,beta:null,gamma:null,grav:9.81 };
+
+// ============================================================
+// START / STOP
+// ============================================================
+function toggleSensors() {
+  if (!recording) startRecording(); else stopRecording();
+}
+
+function startRecording() {
+  initFirebase();
+  startGPS();
+
+  const go = () => {
+    recording = true;
+    window.addEventListener('devicemotion', onMotion, true);
+    window.addEventListener('deviceorientation', onOrientation, true);
+    document.getElementById('status-dot').classList.add('active');
+    document.getElementById('start-btn').textContent = 'STOP';
+    document.getElementById('start-btn').classList.add('stop');
+    logLine('// === RECORDING STARTED ' + now() + ' ===', '');
+    logLine('// Device: ' + getDeviceName() + ' / ID: ' + deviceId, 'log-sync');
+    csvLines.push('timestamp,device_id,device_name,ax,ay,az,atotal,gx,gy,gz,alpha,beta,gamma,lat,lng,event');
+    drawWaveform();
+  };
+
+  if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+    DeviceMotionEvent.requestPermission()
+      .then(p => { if (p==='granted') go(); else alert('Motion permission denied.'); })
+      .catch(e => alert('Permission error: '+e));
+  } else { go(); }
+}
+
+function stopRecording() {
+  recording = false;
+  stopGPS();
+  window.removeEventListener('devicemotion', onMotion, true);
+  window.removeEventListener('deviceorientation', onOrientation, true);
+  document.getElementById('status-dot').classList.remove('active');
+  document.getElementById('start-btn').textContent = 'START';
+  document.getElementById('start-btn').classList.remove('stop');
+  logLine('// === RECORDING STOPPED ' + now() + ' ===', '');
+}
+
+// ============================================================
+// SENSOR EVENTS
+// ============================================================
+function onMotion(e) {
+  const a  = e.accelerationIncludingGravity || {};
+  const ag = e.acceleration || {};
+  const r  = e.rotationRate || {};
+
+  const ax = ag.x||0, ay = ag.y||0, az = ag.z||0;
+  const atotal = Math.sqrt(ax*ax + ay*ay + az*az);
+  const grav   = Math.sqrt((a.x||0)**2 + (a.y||0)**2 + (a.z||0)**2);
+  const gx = r.alpha||0, gy = r.beta||0, gz = r.gamma||0;
+
+  latestSensor = { ax,ay,az,atotal,gx,gy,gz,
+    alpha:latestSensor.alpha, beta:latestSensor.beta, gamma:latestSensor.gamma, grav };
+
+  updateDisplay(ax,ay,az,atotal,gx,gy,gz,grav);
+  waveData.push(atotal);
+  if (waveData.length>200) waveData.shift();
+
+  if (atotal>sessionMaxG) {
+    sessionMaxG=atotal;
+    document.getElementById('apeak').textContent=atotal.toFixed(2);
+    document.getElementById('stat-maxg').textContent=atotal.toFixed(1);
+  }
+
+  const ts = Date.now();
+  if (!window._lastLogTime || ts - window._lastLogTime > 30) {
+    window._lastLogTime = ts;
+    csvLines.push([ts, deviceId, getDeviceName(),
+      ax.toFixed(4),ay.toFixed(4),az.toFixed(4),atotal.toFixed(4),
+      gx.toFixed(2),gy.toFixed(2),gz.toFixed(2),
+      latestSensor.alpha!==null?latestSensor.alpha.toFixed(1):'',
+      latestSensor.beta!==null?latestSensor.beta.toFixed(1):'',
+      latestSensor.gamma!==null?latestSensor.gamma.toFixed(1):'',
+      gpsPos?gpsPos.lat.toFixed(6):'', gpsPos?gpsPos.lng.toFixed(6):'',
+      'sensor'
+    ].join(','));
+  }
+
+  const now_ts = Date.now();
+  if (atotal>threshold && !bumpAlertOpen && (now_ts-lastBumpTime>BUMP_COOLDOWN)) {
+    lastBumpTime = now_ts;
+    triggerBump(atotal);
+  }
+}
+
+function onOrientation(e) {
+  latestSensor.alpha=e.alpha; latestSensor.beta=e.beta; latestSensor.gamma=e.gamma;
+  const fmt=v=>v!==null?v.toFixed(1):'—';
+  document.getElementById('oa').textContent=fmt(e.alpha);
+  document.getElementById('ob').textContent=fmt(e.beta);
+  document.getElementById('og').textContent=fmt(e.gamma);
+}
+
+// ============================================================
+// DISPLAY
+// ============================================================
+function updateDisplay(ax,ay,az,atotal,gx,gy,gz,grav) {
+  function cc(v,w,d){ return Math.abs(v)>d?'danger':Math.abs(v)>w?'warn':''; }
+  setVal('ax',ax.toFixed(2),cc(ax,threshold*.5,threshold));
+  setVal('ay',ay.toFixed(2),cc(ay,threshold*.5,threshold));
+  setVal('az',az.toFixed(2),cc(az,threshold*.5,threshold));
+  setVal('atotal',atotal.toFixed(2),cc(atotal,threshold*.6,threshold));
+  setVal('gx',gx.toFixed(1),''); setVal('gy',gy.toFixed(1),''); setVal('gz',gz.toFixed(1),'');
+  document.getElementById('grav').textContent=(grav||9.81).toFixed(2);
+
+  const pct=Math.min(100,(atotal/(threshold*1.5))*100);
+  const fill=document.getElementById('g-bar-fill');
+  fill.style.width=pct+'%';
+  fill.style.backgroundPosition=Math.min(100,(atotal/threshold)*60)+'% 50%';
+  document.getElementById('g-label-val').textContent=atotal.toFixed(2)+' m/s²';
+}
+function setVal(id,val,cls){
+  const el=document.getElementById(id);
+  el.textContent=val;
+  el.className='value'+(cls?' '+cls:'');
+}
+
+// ============================================================
+// BUMP
+// ============================================================
+function triggerBump(peakVal) {
+  bumpCount++;
+  document.getElementById('stat-bumps').textContent=bumpCount;
+  pendingBump={ time:now(), ts:Date.now(), peak:peakVal, feedback:null,
+    lat:gpsPos?gpsPos.lat:null, lng:gpsPos?gpsPos.lng:null };
+
+  if(navigator.vibrate) navigator.vibrate([200,100,200]);
+
+  document.getElementById('bump-alert-val').textContent=
+    `Peak: ${peakVal.toFixed(2)} m/s²  |  threshold: ${threshold}`;
+  document.getElementById('bump-alert').classList.add('show');
+  bumpAlertOpen=true;
+
+  countdownVal=8;
+  document.getElementById('countdown').textContent=countdownVal;
+  clearInterval(countdownTimer);
+  countdownTimer=setInterval(()=>{
+    countdownVal--;
+    document.getElementById('countdown').textContent=countdownVal;
+    if(countdownVal<=0){ clearInterval(countdownTimer); dismissBump('auto'); }
+  },1000);
+
+  // Log bump immediately (feedback=pending, will update)
+  csvLines.push([pendingBump.ts,deviceId,getDeviceName(),
+    latestSensor.ax.toFixed(4),latestSensor.ay.toFixed(4),latestSensor.az.toFixed(4),
+    peakVal.toFixed(4),
+    latestSensor.gx.toFixed(2),latestSensor.gy.toFixed(2),latestSensor.gz.toFixed(2),
+    latestSensor.alpha!==null?latestSensor.alpha.toFixed(1):'',
+    latestSensor.beta!==null?latestSensor.beta.toFixed(1):'',
+    latestSensor.gamma!==null?latestSensor.gamma.toFixed(1):'',
+    pendingBump.lat!==null?pendingBump.lat.toFixed(6):'',
+    pendingBump.lng!==null?pendingBump.lng.toFixed(6):'',
+    'BUMP_AUTO_pending'
+  ].join(','));
+  logLine(`// 💥 BUMP #${bumpCount} @ ${pendingBump.time} | ${peakVal.toFixed(2)} m/s²`,'log-bump');
+}
+
+function bumpFeedback(yes) {
+  clearInterval(countdownTimer);
+  dismissBump(yes?'yes':'no');
+}
+
+function dismissBump(result) {
+  document.getElementById('bump-alert').classList.remove('show');
+  bumpAlertOpen=false;
+
+  if (!pendingBump) return;
+  pendingBump.feedback=result;
+
+  if(result==='yes'){ yesCount++;  document.getElementById('stat-yes').textContent=yesCount; }
+  else if(result==='no'){ noCount++; document.getElementById('stat-no').textContent=noCount; }
+
+  // Add to history
+  const hist=document.getElementById('bump-history');
+  const empty=hist.querySelector('.empty'); if(empty) empty.remove();
+  const row=document.createElement('div'); row.className='bh-row';
+  const tagClass=result==='yes'?'bh-tag-yes':result==='no'?'bh-tag-no':'bh-tag-auto';
+  const tagText =result==='yes'?'✅ YES':result==='no'?'❌ NO':'⏱ timeout';
+  row.innerHTML=`<span class="bh-time">${pendingBump.time}</span><span class="bh-val">${pendingBump.peak.toFixed(2)} m/s²</span><span class="${tagClass}">${tagText}</span>`;
+  hist.insertBefore(row,hist.firstChild);
+
+  // Firebase sync
+  pushToFirebase(pendingBump, result);
+
+  const cls=result==='yes'?'log-confirm':result==='no'?'log-deny':'';
+  logLine(`// FEEDBACK: ${tagText} for bump #${bumpCount}`, cls);
+
+  pendingBump=null;
+}
+
+// ============================================================
+// FIREBASE PUSH
+// ============================================================
+function pushToFirebase(bump, feedback) {
+  if (!firebaseReady || !db) {
+    logLine('// ⚠ Firebase not ready — bump not synced', 'log-deny');
+    return;
+  }
+
+  const doc = {
+    device_id:    deviceId,
+    device_name:  getDeviceName(),
+    timestamp:    firebase.firestore.Timestamp.fromMillis(bump.ts),
+    timestamp_ms: bump.ts,
+    peak_accel:   bump.peak,
+    ax: latestSensor.ax, ay: latestSensor.ay, az: latestSensor.az,
+    gx: latestSensor.gx, gy: latestSensor.gy, gz: latestSensor.gz,
+    alpha: latestSensor.alpha, beta: latestSensor.beta, gamma: latestSensor.gamma,
+    threshold:    threshold,
+    feedback:     feedback,
+    confirmed:    feedback === 'yes',
+    lat:          bump.lat,
+    lng:          bump.lng,
+    session_start: window._sessionStart || bump.ts
+  };
+
+  db.collection(COLLECTION).add(doc)
+    .then(ref => {
+      syncCount++;
+      document.getElementById('sync-count').textContent = syncCount + ' synced';
+      logLine('// ☁ Synced bump → ' + ref.id, 'log-sync');
+    })
+    .catch(err => {
+      logLine('// ☁ Sync error: ' + err.message, 'log-deny');
+    });
+}
+
+// ============================================================
+// WAVEFORM
+// ============================================================
+function drawWaveform() {
+  if(!recording) return;
+  requestAnimationFrame(drawWaveform);
+  const W=canvas.offsetWidth*window.devicePixelRatio;
+  const H=canvas.offsetHeight*window.devicePixelRatio;
+  canvas.width=W; canvas.height=H;
+  ctx2d.fillStyle='#050510'; ctx2d.fillRect(0,0,W,H);
+  ctx2d.strokeStyle='#111130'; ctx2d.lineWidth=1;
+  for(let i=0;i<5;i++){ const y=(H/4)*i; ctx2d.beginPath();ctx2d.moveTo(0,y);ctx2d.lineTo(W,y);ctx2d.stroke(); }
+  const maxScale=threshold*2;
+  const threshY=H-(threshold/maxScale)*H;
+  ctx2d.strokeStyle='#ff444888'; ctx2d.lineWidth=1.5; ctx2d.setLineDash([4,4]);
+  ctx2d.beginPath();ctx2d.moveTo(0,threshY);ctx2d.lineTo(W,threshY);ctx2d.stroke();
+  ctx2d.setLineDash([]);
+  const step=W/waveData.length;
+  ctx2d.strokeStyle='#00ff88'; ctx2d.lineWidth=2; ctx2d.shadowBlur=6; ctx2d.shadowColor='#00ff88';
+  ctx2d.beginPath();
+  for(let i=0;i<waveData.length;i++){
+    const x=i*step; const y=H-Math.min(1,waveData[i]/maxScale)*H;
+    i===0?ctx2d.moveTo(x,y):ctx2d.lineTo(x,y);
+  }
+  ctx2d.stroke(); ctx2d.shadowBlur=0;
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+function logLine(text,cls){
+  const box=document.getElementById('log-box');
+  const el=document.createElement('span');
+  if(cls) el.className=cls;
+  el.textContent=text+'\n';
+  box.appendChild(el);
+  box.scrollTop=box.scrollHeight;
+  csvLines.push(text);
+}
+
+function downloadLog(){
+  if(csvLines.length===0){ alert('No data yet. Press START first.'); return; }
+  const blob=new Blob([csvLines.join('\n')],{type:'text/csv'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download='bump_log_'+new Date().toISOString().replace(/[:.]/g,'-')+'.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function updateThreshold(val){ threshold=parseFloat(val); document.getElementById('thresh-val').textContent=threshold.toFixed(1)+' m/s²'; }
+
+function now(){ return new Date().toLocaleTimeString('en-US',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit',fractionalSecondDigits:3}); }
+
+window._sessionStart = Date.now();
+
+// Wake lock
+async function requestWakeLock(){
+  try{ if('wakeLock'in navigator) await navigator.wakeLock.request('screen'); }catch(e){}
+}
+requestWakeLock();
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') requestWakeLock(); });
+</script>
+</body>
+</html>

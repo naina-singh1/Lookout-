@@ -2,12 +2,14 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, SafeAreaView, StatusBar, Switch, ActivityIndicator,
+  TouchableOpacity, SafeAreaView, StatusBar, Switch, ActivityIndicator, Alert,
 } from 'react-native';
 import { signOut } from 'firebase/auth';
 import { auth } from '../services/firebase';
-import { subscribeUserPotholes } from '../services/potholes';
+import { subscribeUserPotholes, resolvePothole } from '../services/potholes';
+import { awardPoints, getUserPoints, fetchLeaderboard, rankLabel, LeaderboardEntry, POINTS } from '../services/points';
 import { getAlertPrefs, setAlertPrefs } from '../services/alertPrefs';
+import { setCachedAlertPrefs } from '../tasks/locationTask';
 import { useLanguage } from '../contexts/LanguageContext';
 import { C, F, R, Pothole } from '../constants/theme';
 import { ScreenHeader, SevBadge } from '../components/ui';
@@ -18,10 +20,13 @@ export default function ProfileScreen() {
   const displayName = user?.displayName || user?.email?.split('@')[0] || 'User';
   const avatarLetter = displayName.charAt(0).toUpperCase();
 
-  const [myReports, setMyReports]       = useState<Pothole[]>([]);
+  const [myReports, setMyReports]           = useState<Pothole[]>([]);
   const [reportsLoading, setReportsLoading] = useState(true);
   const [drivingAlerts, setDrivingAlerts]   = useState(true);
   const [proximityAlert, setProximityAlert] = useState(true);
+  const [points, setPoints]                 = useState(0);
+  const [leaderboard, setLeaderboard]       = useState<LeaderboardEntry[]>([]);
+  const [lbLoading, setLbLoading]           = useState(true);
 
   // Load real reports from Firestore
   useEffect(() => {
@@ -31,6 +36,15 @@ export default function ProfileScreen() {
     });
     return unsub;
   }, []);
+
+  // Load points + leaderboard
+  useEffect(() => {
+    getUserPoints().then(setPoints);
+    fetchLeaderboard().then(data => {
+      setLeaderboard(data);
+      setLbLoading(false);
+    });
+  }, [myReports]); // refresh when reports change
 
   // Load saved alert prefs
   useEffect(() => {
@@ -43,11 +57,30 @@ export default function ProfileScreen() {
   function handleDrivingToggle(val: boolean) {
     setDrivingAlerts(val);
     setAlertPrefs({ drivingAlerts: val });
+    setCachedAlertPrefs({ drivingAlerts: val }); // keep in-memory cache in sync
   }
 
   function handleProximityToggle(val: boolean) {
     setProximityAlert(val);
     setAlertPrefs({ proximityAlerts: val });
+    setCachedAlertPrefs({ proximityAlerts: val }); // keep in-memory cache in sync
+  }
+
+  function handleResolve(id: string, location: string) {
+    Alert.alert(t.markFixed, t.fixedConfirm, [
+      { text: t.cancel, style: 'cancel' },
+      {
+        text: t.confirmBtn,
+        style: 'destructive',
+        onPress: async () => {
+          await resolvePothole(id);
+          await awardPoints('resolve');
+          const newPts = await getUserPoints();
+          setPoints(newPts);
+          Alert.alert(t.fixedTitle, t.fixedMsg(location) + ` (+${POINTS.RESOLVE} pts)`);
+        },
+      },
+    ]);
   }
 
   async function handleSignOut() {
@@ -77,6 +110,18 @@ export default function ProfileScreen() {
           <View style={{ flex: 1 }}>
             <Text style={styles.username}>{displayName}</Text>
             <Text style={styles.location}>📍 {t.city}</Text>
+          </View>
+        </View>
+
+        {/* Points card */}
+        <View style={styles.pointsCard}>
+          <View>
+            <Text style={styles.pointsNum}>{points} pts</Text>
+            <Text style={styles.pointsRank}>{rankLabel(points)}</Text>
+          </View>
+          <View style={styles.pointsHints}>
+            <Text style={styles.pointsHint}>+{POINTS.REPORT} {t.perReport}</Text>
+            <Text style={styles.pointsHint}>+{POINTS.RESOLVE} {t.perResolve}</Text>
           </View>
         </View>
 
@@ -135,9 +180,40 @@ export default function ProfileScreen() {
                 <Text style={styles.reportLocation}>{p.location}</Text>
                 <Text style={styles.reportSub}>{p.time}</Text>
               </View>
-              <SevBadge severity={p.severity} />
+              <View style={{ alignItems: 'flex-end', gap: 6 }}>
+                <SevBadge severity={p.severity} />
+                <TouchableOpacity
+                  style={styles.fixedBtn}
+                  onPress={() => handleResolve(p.id, p.location)}
+                >
+                  <Text style={styles.fixedBtnText}>✓ {t.markFixed}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           ))
+        )}
+
+        {/* Leaderboard */}
+        <Text style={styles.sectionTitle}>{t.leaderboard}</Text>
+        {lbLoading ? (
+          <ActivityIndicator color={C.accent} style={{ marginTop: 12 }} />
+        ) : (
+          leaderboard.map((entry, i) => {
+            const isMe = entry.uid === user?.uid;
+            const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+            return (
+              <View key={entry.uid} style={[styles.lbItem, isMe && styles.lbItemMe]}>
+                <Text style={styles.lbMedal}>{medal}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.lbName, isMe && { color: C.accent }]}>
+                    {entry.displayName}{isMe ? ' (you)' : ''}
+                  </Text>
+                  <Text style={styles.lbSub}>{entry.reportsCount} reports · {entry.resolvedCount} resolved</Text>
+                </View>
+                <Text style={[styles.lbPoints, isMe && { color: C.accent }]}>{entry.points} pts</Text>
+              </View>
+            );
+          })
         )}
 
         {/* Language toggle */}
@@ -214,8 +290,33 @@ const styles = StyleSheet.create({
     backgroundColor: C.surface, borderRadius: R.card,
     borderWidth: 0.5, borderColor: C.borderSubtle, padding: 12,
   },
+  fixedBtn: {
+    paddingHorizontal: 8, paddingVertical: 4,
+    borderRadius: 6, borderWidth: 0.5,
+    borderColor: C.minor, backgroundColor: C.minorBg,
+  },
+  fixedBtnText: { fontSize: 10, color: C.minor, fontWeight: '600' },
   reportLocation: { fontSize: 14, color: C.textPrimary, fontWeight: '600' },
   reportSub: { fontSize: 11, color: C.textMuted, marginTop: 2 },
+  pointsCard: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    backgroundColor: C.surface, borderRadius: R.card,
+    borderWidth: 0.5, borderColor: C.accent + '55', padding: 16,
+  },
+  pointsNum: { fontSize: 28, fontWeight: '800', color: C.accent },
+  pointsRank: { fontSize: 12, color: C.textSecondary, marginTop: 2 },
+  pointsHints: { alignItems: 'flex-end', gap: 4 },
+  pointsHint: { fontSize: 11, color: C.textMuted },
+  lbItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: C.surface, borderRadius: R.card,
+    borderWidth: 0.5, borderColor: C.borderSubtle, padding: 12,
+  },
+  lbItemMe: { borderColor: C.accent + '88', backgroundColor: C.elevated },
+  lbMedal: { fontSize: 18, width: 28, textAlign: 'center' },
+  lbName: { fontSize: 13, color: C.textPrimary, fontWeight: '600' },
+  lbSub: { fontSize: 10, color: C.textMuted, marginTop: 2 },
+  lbPoints: { fontSize: 14, fontWeight: '700', color: C.textSecondary },
   langRow: { flexDirection: 'row', gap: 10, marginTop: 4 },
   langBtn: {
     flex: 1, paddingVertical: 10, borderRadius: R.button,

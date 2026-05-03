@@ -13,12 +13,14 @@ import { reportPothole, subscribePotholes } from '../services/potholes';
 import { checkProximity, getDistanceMeters, formatDistance, ProximityAlert } from '../services/proximity';
 import {
   startBackgroundTracking, stopBackgroundTracking, registerLocationCallback,
-  updateBgPotholes,
+  updateBgPotholes, refreshCachedAlertPrefs,
 } from '../tasks/locationTask';
 import {
   requestNotificationPermission, setupAndroidNotificationChannel,
 } from '../services/notifications';
 import { getAlertPrefs } from '../services/alertPrefs';
+import { playProximityAlert } from '../services/sound';
+import { awardPoints, POINTS } from '../services/points';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const SEVERITY_OPTIONS: { label: string; value: Severity; color: string }[] = [
@@ -65,7 +67,10 @@ export default function MapScreen() {
     alertedIdsRef.current = updatedAlertedIds;
     if (newAlerts.length > 0) {
       getAlertPrefs().then(({ drivingAlerts }) => {
-        if (drivingAlerts) enqueueAlerts(newAlerts);
+        if (drivingAlerts) {
+          enqueueAlerts(newAlerts);
+          playProximityAlert(newAlerts[0].pothole.severity);
+        }
       });
     }
   }, [potholes, enqueueAlerts]);
@@ -106,7 +111,11 @@ export default function MapScreen() {
     alertedIdsRef.current = updatedAlertedIds;
     if (newAlerts.length > 0) {
       const { drivingAlerts } = await getAlertPrefs();
-      if (drivingAlerts) enqueueAlerts(newAlerts);
+      if (drivingAlerts) {
+        enqueueAlerts(newAlerts);
+        // Play sound + vibration for the most severe alert
+        playProximityAlert(newAlerts[0].pothole.severity);
+      }
     }
   }, [enqueueAlerts]);
 
@@ -143,6 +152,9 @@ export default function MapScreen() {
       try {
         await setupAndroidNotificationChannel();
         await requestNotificationPermission();
+        // Pre-load alert prefs into the in-memory cache so the background
+        // location task never has to hit AsyncStorage in its hot path.
+        await refreshCachedAlertPrefs();
       } catch (e) {
         console.warn('[Lookout] Notification setup failed:', e);
       }
@@ -167,6 +179,7 @@ export default function MapScreen() {
     return unsub;
   }, []);
 
+
   async function handleReport() {
     if (!userLocation) {
       Alert.alert(t.locationNeeded, t.locationNeededMsg);
@@ -179,9 +192,20 @@ export default function MapScreen() {
         ? [place.street, place.district || place.subregion].filter(Boolean).join(', ') || place.city || 'Unknown road'
         : 'Unknown road';
       const sublocation = place?.city || place?.region || '';
-      await reportPothole(userLocation.latitude, userLocation.longitude, selectedSeverity, location, sublocation);
+      const { merged } = await reportPothole(userLocation.latitude, userLocation.longitude, selectedSeverity, location, sublocation);
+      await awardPoints('report');
       setReportModal(false);
-      Alert.alert(t.reportedTitle, t.reportedMsg(selectedSeverity, location));
+
+      if (merged) {
+        // An existing nearby pothole was found — confirmed count incremented
+        Alert.alert(
+          '✅ Report Confirmed',
+          `Another user already reported a pothole here. Your confirmation has been counted (+${POINTS.REPORT} pts)`,
+        );
+      } else {
+        // Brand-new pothole document created
+        Alert.alert(t.reportedTitle, t.reportedMsg(selectedSeverity, location) + ` (+${POINTS.REPORT} pts)`);
+      }
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {

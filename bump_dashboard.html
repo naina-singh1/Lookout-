@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🗺 Bump Dashboard</title>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<!-- Leaflet map -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- Chart.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+<style>
+* { box-sizing:border-box; margin:0; padding:0; }
+body { background:#0a0a0f; color:#e0e0e0; font-family:'Segoe UI',Arial,sans-serif; }
+
+/* HEADER */
+#header {
+  background:linear-gradient(135deg,#1a1a2e,#16213e);
+  padding:14px 24px; border-bottom:2px solid #00ff88;
+  display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;
+}
+#header h1 { font-size:20px; color:#00ff88; letter-spacing:1px; }
+#header .hright { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.live-badge { background:#ff444422; border:1px solid #ff4444; color:#ff4444; padding:4px 10px; border-radius:12px; font-size:12px; font-weight:bold; }
+.live-badge.ok { background:#00ff8822; border-color:#00ff88; color:#00ff88; }
+#conn-status { font-size:12px; color:#888; }
+
+/* DEVICE FILTER */
+#filter-bar {
+  background:#0d0d1a; border-bottom:1px solid #1a1a3a;
+  padding:10px 24px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+}
+#filter-bar label { font-size:12px; color:#888; }
+#device-filter {
+  background:#12121f; border:1px solid #2a2a4a; color:#e0e0e0;
+  padding:6px 12px; border-radius:8px; font-size:13px; cursor:pointer;
+}
+#date-from,#date-to {
+  background:#12121f; border:1px solid #2a2a4a; color:#e0e0e0;
+  padding:6px 10px; border-radius:8px; font-size:13px;
+}
+#filter-bar button {
+  background:#00ff88; color:#0a0a0f; border:none; padding:7px 18px;
+  border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer;
+}
+#filter-bar button:active { opacity:.8; }
+#filter-bar .record-count { margin-left:auto; font-size:12px; color:#555; }
+
+/* STAT CARDS */
+.stat-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; padding:16px 24px; }
+.stat-card {
+  background:#12121f; border:1px solid #2a2a4a; border-radius:12px;
+  padding:14px 18px; text-align:center;
+}
+.stat-card .sc-label { font-size:11px; color:#666; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px; }
+.stat-card .sc-val   { font-size:28px; font-weight:bold; color:#7799ff; }
+.stat-card .sc-sub   { font-size:11px; color:#444; margin-top:4px; }
+.stat-card.green .sc-val { color:#00ff88; }
+.stat-card.red   .sc-val { color:#ff4444; }
+.stat-card.orange.sc-val { color:#ff8844; }
+
+/* LAYOUT GRID */
+.grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:0 24px 16px; }
+.grid-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; padding:0 24px 16px; }
+@media(max-width:900px){ .grid-2,.grid-3{grid-template-columns:1fr;} }
+
+.panel {
+  background:#12121f; border:1px solid #2a2a4a; border-radius:12px; overflow:hidden;
+}
+.panel-header {
+  background:#0d0d1a; padding:12px 16px; border-bottom:1px solid #1a1a3a;
+  display:flex; align-items:center; justify-content:space-between;
+}
+.panel-header h3 { font-size:13px; color:#aaa; text-transform:uppercase; letter-spacing:1px; }
+.panel-body { padding:14px; }
+
+/* MAP */
+#map { height:380px; border-radius:0 0 12px 12px; }
+
+/* TABLE */
+#bump-table-wrap { overflow-x:auto; max-height:360px; overflow-y:auto; }
+table { width:100%; border-collapse:collapse; font-size:12px; }
+thead tr { background:#0d0d1a; position:sticky; top:0; z-index:1; }
+th { padding:10px 12px; text-align:left; color:#888; font-weight:600; text-transform:uppercase; letter-spacing:.5px; border-bottom:1px solid #1a1a3a; white-space:nowrap; }
+td { padding:9px 12px; border-bottom:1px solid #151525; white-space:nowrap; }
+tr:hover td { background:#16162a; }
+.tag { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold; }
+.tag-yes  { background:#00ff8822; color:#00ff88; border:1px solid #00ff8844; }
+.tag-no   { background:#ff444422; color:#ff4444; border:1px solid #ff444444; }
+.tag-auto { background:#ffffff11; color:#888;    border:1px solid #ffffff22; }
+.sev-high { color:#ff4444; font-weight:bold; }
+.sev-med  { color:#ffaa00; }
+.sev-low  { color:#00ff88; }
+
+/* CHART */
+.chart-wrap { position:relative; height:200px; }
+
+/* DEVICE LIST */
+#device-list { font-size:13px; }
+.dev-row {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:10px 0; border-bottom:1px solid #1a1a3a;
+}
+.dev-row:last-child { border-bottom:none; }
+.dev-name { color:#e0e0e0; font-weight:500; }
+.dev-stats { font-size:11px; color:#666; }
+.dev-badge { background:#7799ff22; color:#7799ff; border:1px solid #7799ff44; padding:2px 8px; border-radius:10px; font-size:11px; }
+
+/* LOADING */
+#loading { text-align:center; padding:40px; color:#555; font-size:14px; }
+
+/* EMPTY */
+.empty-msg { color:#444; text-align:center; padding:30px; font-size:13px; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div id="header">
+  <h1>🗺 Bump Dashboard</h1>
+  <div class="hright">
+    <span id="conn-status">Connecting...</span>
+    <span class="live-badge" id="live-badge">● OFFLINE</span>
+  </div>
+</div>
+
+<!-- FILTER BAR -->
+<div id="filter-bar">
+  <label>Device:</label>
+  <select id="device-filter" onchange="applyFilters()">
+    <option value="all">All Devices</option>
+  </select>
+  <label>From:</label>
+  <input type="date" id="date-from" onchange="applyFilters()">
+  <label>To:</label>
+  <input type="date" id="date-to" onchange="applyFilters()">
+  <button onclick="clearFilters()">Clear</button>
+  <span class="record-count" id="record-count">Loading...</span>
+</div>
+
+<!-- STAT CARDS -->
+<div class="stat-row">
+  <div class="stat-card"><div class="sc-label">Total Bumps</div><div class="sc-val" id="s-total">—</div><div class="sc-sub">all devices</div></div>
+  <div class="stat-card green"><div class="sc-label">Confirmed</div><div class="sc-val" id="s-yes">—</div><div class="sc-sub">user said YES</div></div>
+  <div class="stat-card red"><div class="sc-label">False Alerts</div><div class="sc-val" id="s-no">—</div><div class="sc-sub">user said NO</div></div>
+  <div class="stat-card"><div class="sc-label">Accuracy</div><div class="sc-val" id="s-acc">—</div><div class="sc-sub">confirmed / total feedback</div></div>
+  <div class="stat-card"><div class="sc-label">Peak G</div><div class="sc-val" id="s-peak" style="color:#ff8844">—</div><div class="sc-sub">m/s² max recorded</div></div>
+  <div class="stat-card"><div class="sc-label">Active Devices</div><div class="sc-val" id="s-devs">—</div><div class="sc-sub">unique recorders</div></div>
+</div>
+
+<!-- MAP + DEVICE LIST -->
+<div class="grid-2">
+  <div class="panel">
+    <div class="panel-header"><h3>🗺 Bump Map</h3><span style="font-size:11px;color:#555">GPS tagged bumps</span></div>
+    <div id="map"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-header"><h3>📱 Per-Device Breakdown</h3></div>
+    <div class="panel-body">
+      <div id="device-list"><div class="empty-msg">No data yet</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- CHARTS -->
+<div class="grid-3">
+  <div class="panel">
+    <div class="panel-header"><h3>📅 Bumps Over Time</h3></div>
+    <div class="panel-body"><div class="chart-wrap"><canvas id="chart-timeline"></canvas></div></div>
+  </div>
+  <div class="panel">
+    <div class="panel-header"><h3>💥 Severity Distribution</h3></div>
+    <div class="panel-body"><div class="chart-wrap"><canvas id="chart-severity"></canvas></div></div>
+  </div>
+  <div class="panel">
+    <div class="panel-header"><h3>✅ Feedback Breakdown</h3></div>
+    <div class="panel-body"><div class="chart-wrap"><canvas id="chart-feedback"></canvas></div></div>
+  </div>
+</div>
+
+<!-- TABLE -->
+<div style="padding:0 24px 24px">
+  <div class="panel">
+    <div class="panel-header">
+      <h3>📋 All Bump Events</h3>
+      <button onclick="exportCSV()" style="background:#1a1a2e;border:1px solid #00ff88;color:#00ff88;padding:4px 14px;border-radius:8px;font-size:12px;cursor:pointer;">⬇ Export CSV</button>
+    </div>
+    <div id="bump-table-wrap">
+      <div id="loading">⏳ Loading from Firebase...</div>
+      <table id="bump-table" style="display:none">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Device</th>
+            <th>Peak (m/s²)</th>
+            <th>Severity</th>
+            <th>Feedback</th>
+            <th>Ax</th><th>Ay</th><th>Az</th>
+            <th>Lat</th><th>Lng</th>
+          </tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+      </table>
+      <div class="empty-msg" id="table-empty" style="display:none">No bumps match the current filter</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// 🔥 FIREBASE CONFIG — same as in bump_detector.html
+// ============================================================
+const FIREBASE_CONFIG = {
+  apiKey:            "YOUR_API_KEY",
+  authDomain:        "YOUR_PROJECT.firebaseapp.com",
+  projectId:         "YOUR_PROJECT_ID",
+  storageBucket:     "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId:             "YOUR_APP_ID"
+};
+const COLLECTION = "bump_events";
+// ============================================================
+
+let db, allBumps = [], filteredBumps = [];
+let map, markers = [], markerLayer;
+let chartTimeline, chartSeverity, chartFeedback;
+
+// ============================================================
+// INIT
+// ============================================================
+window.onload = () => {
+  initMap();
+  initCharts();
+  initFirebase();
+};
+
+function initFirebase() {
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.firestore();
+    document.getElementById('conn-status').textContent = '✅ Firebase connected';
+    document.getElementById('live-badge').textContent = '● LIVE';
+    document.getElementById('live-badge').className = 'live-badge ok';
+    subscribeToData();
+  } catch(e) {
+    document.getElementById('conn-status').textContent = '❌ ' + e.message;
+    document.getElementById('loading').textContent = '❌ Firebase error: ' + e.message;
+  }
+}
+
+function subscribeToData() {
+  db.collection(COLLECTION)
+    .orderBy('timestamp_ms','desc')
+    .onSnapshot(snap => {
+      allBumps = [];
+      snap.forEach(doc => {
+        const d = doc.data();
+        allBumps.push({ id:doc.id, ...d });
+      });
+      populateDeviceFilter();
+      applyFilters();
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('bump-table').style.display = '';
+    }, err => {
+      document.getElementById('loading').textContent = '❌ Error: ' + err.message;
+    });
+}
+
+// ============================================================
+// FILTERS
+// ============================================================
+function populateDeviceFilter() {
+  const devices = [...new Set(allBumps.map(b => b.device_name || b.device_id))].sort();
+  const sel = document.getElementById('device-filter');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="all">All Devices</option>';
+  devices.forEach(d => {
+    const o = document.createElement('option');
+    o.value = d; o.textContent = d;
+    if (d === cur) o.selected = true;
+    sel.appendChild(o);
+  });
+}
+
+function applyFilters() {
+  const dev  = document.getElementById('device-filter').value;
+  const from = document.getElementById('date-from').value;
+  const to   = document.getElementById('date-to').value;
+
+  filteredBumps = allBumps.filter(b => {
+    if (dev !== 'all' && (b.device_name||b.device_id) !== dev) return false;
+    if (from) { const d=new Date(from); if (b.timestamp_ms < d.getTime()) return false; }
+    if (to)   { const d=new Date(to); d.setDate(d.getDate()+1); if (b.timestamp_ms > d.getTime()) return false; }
+    return true;
+  });
+
+  document.getElementById('record-count').textContent = filteredBumps.length + ' records';
+  updateStats();
+  updateTable();
+  updateMap();
+  updateCharts();
+  updateDeviceList();
+}
+
+function clearFilters() {
+  document.getElementById('device-filter').value = 'all';
+  document.getElementById('date-from').value = '';
+  document.getElementById('date-to').value = '';
+  applyFilters();
+}
+
+// ============================================================
+// STATS
+// ============================================================
+function updateStats() {
+  const total = filteredBumps.length;
+  const yes   = filteredBumps.filter(b=>b.feedback==='yes').length;
+  const no    = filteredBumps.filter(b=>b.feedback==='no').length;
+  const fb    = yes + no;
+  const acc   = fb>0 ? Math.round((yes/fb)*100) : 0;
+  const peak  = filteredBumps.reduce((m,b)=>Math.max(m,b.peak_accel||0),0);
+  const devs  = new Set(filteredBumps.map(b=>b.device_id)).size;
+
+  document.getElementById('s-total').textContent = total;
+  document.getElementById('s-yes').textContent   = yes;
+  document.getElementById('s-no').textContent    = no;
+  document.getElementById('s-acc').textContent   = acc + '%';
+  document.getElementById('s-peak').textContent  = peak.toFixed(1);
+  document.getElementById('s-devs').textContent  = devs;
+}
+
+// ============================================================
+// TABLE
+// ============================================================
+function updateTable() {
+  const tbody = document.getElementById('table-body');
+  tbody.innerHTML = '';
+
+  if (filteredBumps.length === 0) {
+    document.getElementById('table-empty').style.display = '';
+    return;
+  }
+  document.getElementById('table-empty').style.display = 'none';
+
+  filteredBumps.forEach(b => {
+    const peak = b.peak_accel || 0;
+    const sevClass = peak>=25?'sev-high':peak>=15?'sev-med':'sev-low';
+    const sevLabel = peak>=25?'🔴 High':peak>=15?'🟠 Med':'🟢 Low';
+    const fbTag = b.feedback==='yes'
+      ? '<span class="tag tag-yes">✅ YES</span>'
+      : b.feedback==='no'
+      ? '<span class="tag tag-no">❌ NO</span>'
+      : '<span class="tag tag-auto">⏱ timeout</span>';
+    const ts = b.timestamp_ms ? new Date(b.timestamp_ms).toLocaleString() : '—';
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${ts}</td>
+      <td>${b.device_name||b.device_id||'—'}</td>
+      <td class="${sevClass}">${peak.toFixed(2)}</td>
+      <td>${sevLabel}</td>
+      <td>${fbTag}</td>
+      <td>${(b.ax||0).toFixed(2)}</td>
+      <td>${(b.ay||0).toFixed(2)}</td>
+      <td>${(b.az||0).toFixed(2)}</td>
+      <td>${b.lat!=null?b.lat.toFixed(5):'—'}</td>
+      <td>${b.lng!=null?b.lng.toFixed(5):'—'}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+// ============================================================
+// MAP
+// ============================================================
+function initMap() {
+  map = L.map('map').setView([20, 0], 2);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors', maxZoom:19
+  }).addTo(map);
+  markerLayer = L.layerGroup().addTo(map);
+}
+
+function updateMap() {
+  markerLayer.clearLayers();
+  const geoPoints = filteredBumps.filter(b => b.lat!=null && b.lng!=null);
+
+  if (geoPoints.length === 0) return;
+
+  geoPoints.forEach(b => {
+    const peak = b.peak_accel || 0;
+    const color = peak>=25?'#ff4444':peak>=15?'#ffaa00':'#00ff88';
+    const size  = Math.max(8, Math.min(24, peak));
+
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="width:${size}px;height:${size}px;background:${color};border-radius:50%;border:2px solid white;opacity:.85;box-shadow:0 0 6px ${color}"></div>`,
+      iconSize: [size, size],
+      iconAnchor: [size/2, size/2]
+    });
+
+    const ts = b.timestamp_ms ? new Date(b.timestamp_ms).toLocaleString() : '—';
+    const fb = b.feedback==='yes'?'✅ Confirmed':b.feedback==='no'?'❌ False alert':'⏱ No response';
+
+    L.marker([b.lat, b.lng], {icon})
+      .addTo(markerLayer)
+      .bindPopup(`
+        <b>💥 ${peak.toFixed(2)} m/s²</b><br>
+        📱 ${b.device_name||b.device_id}<br>
+        🕐 ${ts}<br>
+        ${fb}`);
+  });
+
+  // Fit bounds
+  const bounds = L.latLngBounds(geoPoints.map(b=>[b.lat,b.lng]));
+  if (bounds.isValid()) map.fitBounds(bounds, {padding:[40,40], maxZoom:15});
+}
+
+// ============================================================
+// CHARTS
+// ============================================================
+function initCharts() {
+  Chart.defaults.color = '#888';
+  Chart.defaults.borderColor = '#1a1a3a';
+
+  const baseOpts = {
+    responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:{ labels:{ color:'#aaa', boxWidth:12 } } }
+  };
+
+  chartTimeline = new Chart(document.getElementById('chart-timeline'), {
+    type:'bar',
+    data:{ labels:[], datasets:[{ label:'Bumps', data:[], backgroundColor:'#7799ff88', borderColor:'#7799ff', borderWidth:1 }] },
+    options:{ ...baseOpts, scales:{ x:{ticks:{color:'#666'}}, y:{ticks:{color:'#666'}, beginAtZero:true} } }
+  });
+
+  chartSeverity = new Chart(document.getElementById('chart-severity'), {
+    type:'bar',
+    data:{ labels:['Low (<15)', 'Med (15-25)', 'High (>25)'],
+      datasets:[{ label:'Count', data:[0,0,0],
+        backgroundColor:['#00ff8844','#ffaa0044','#ff444444'],
+        borderColor:['#00ff88','#ffaa00','#ff4444'], borderWidth:2 }] },
+    options:{ ...baseOpts, scales:{ x:{ticks:{color:'#666'}}, y:{ticks:{color:'#666'}, beginAtZero:true} } }
+  });
+
+  chartFeedback = new Chart(document.getElementById('chart-feedback'), {
+    type:'doughnut',
+    data:{ labels:['Confirmed ✅', 'False ❌', 'Timeout ⏱'],
+      datasets:[{ data:[0,0,0],
+        backgroundColor:['#00ff8866','#ff444466','#ffffff22'],
+        borderColor:['#00ff88','#ff4444','#555'], borderWidth:2 }] },
+    options:{ ...baseOpts }
+  });
+}
+
+function updateCharts() {
+  // Timeline — group by day
+  const byDay = {};
+  filteredBumps.forEach(b => {
+    const d = b.timestamp_ms ? new Date(b.timestamp_ms).toLocaleDateString() : 'unknown';
+    byDay[d] = (byDay[d]||0) + 1;
+  });
+  const days = Object.keys(byDay).sort((a,b)=>new Date(a)-new Date(b)).slice(-30);
+  chartTimeline.data.labels = days;
+  chartTimeline.data.datasets[0].data = days.map(d=>byDay[d]);
+  chartTimeline.update();
+
+  // Severity
+  const low  = filteredBumps.filter(b=>(b.peak_accel||0)<15).length;
+  const med  = filteredBumps.filter(b=>(b.peak_accel||0)>=15&&(b.peak_accel||0)<25).length;
+  const high = filteredBumps.filter(b=>(b.peak_accel||0)>=25).length;
+  chartSeverity.data.datasets[0].data = [low, med, high];
+  chartSeverity.update();
+
+  // Feedback
+  const yes  = filteredBumps.filter(b=>b.feedback==='yes').length;
+  const no   = filteredBumps.filter(b=>b.feedback==='no').length;
+  const auto = filteredBumps.filter(b=>b.feedback==='auto'||b.feedback==='pending').length;
+  chartFeedback.data.datasets[0].data = [yes, no, auto];
+  chartFeedback.update();
+}
+
+// ============================================================
+// DEVICE LIST
+// ============================================================
+function updateDeviceList() {
+  const devMap = {};
+  filteredBumps.forEach(b => {
+    const key = b.device_name || b.device_id || 'Unknown';
+    if (!devMap[key]) devMap[key] = { total:0, yes:0, no:0, peak:0 };
+    devMap[key].total++;
+    if (b.feedback==='yes') devMap[key].yes++;
+    if (b.feedback==='no')  devMap[key].no++;
+    if ((b.peak_accel||0) > devMap[key].peak) devMap[key].peak = b.peak_accel||0;
+  });
+
+  const el = document.getElementById('device-list');
+  if (Object.keys(devMap).length === 0) { el.innerHTML='<div class="empty-msg">No data yet</div>'; return; }
+
+  el.innerHTML = Object.entries(devMap)
+    .sort((a,b)=>b[1].total-a[1].total)
+    .map(([name,d])=>`
+      <div class="dev-row">
+        <div>
+          <div class="dev-name">📱 ${name}</div>
+          <div class="dev-stats">${d.yes} confirmed · ${d.no} denied · peak ${d.peak.toFixed(1)} m/s²</div>
+        </div>
+        <span class="dev-badge">${d.total} bumps</span>
+      </div>`).join('');
+}
+
+// ============================================================
+// EXPORT
+// ============================================================
+function exportCSV() {
+  if (filteredBumps.length===0) { alert('No data to export.'); return; }
+  const header = 'id,timestamp,device_id,device_name,peak_accel,ax,ay,az,gx,gy,gz,alpha,beta,gamma,lat,lng,feedback,confirmed';
+  const rows = filteredBumps.map(b => [
+    b.id,
+    b.timestamp_ms?new Date(b.timestamp_ms).toISOString():'',
+    b.device_id||'', b.device_name||'',
+    b.peak_accel||0,
+    (b.ax||0).toFixed(4),(b.ay||0).toFixed(4),(b.az||0).toFixed(4),
+    (b.gx||0).toFixed(2),(b.gy||0).toFixed(2),(b.gz||0).toFixed(2),
+    b.alpha!=null?b.alpha.toFixed(1):'',
+    b.beta!=null?b.beta.toFixed(1):'',
+    b.gamma!=null?b.gamma.toFixed(1):'',
+    b.lat!=null?b.lat.toFixed(6):'', b.lng!=null?b.lng.toFixed(6):'',
+    b.feedback||'', b.confirmed?'true':'false'
+  ].join(','));
+
+  const blob = new Blob([[header,...rows].join('\n')], {type:'text/csv'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href=url; a.download='bumps_export_'+Date.now()+'.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>

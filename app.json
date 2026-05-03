@@ -14,6 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.gopika.lookout",
       "config": {
         "googleMapsApiKey": "AIzaSyBvh6kAxCSP_5nU8JEi_f_urI_W4HlcYU4"
       },
@@ -21,10 +22,19 @@
         "NSLocationWhenInUseUsageDescription": "Lookout shows nearby potholes and alerts you when one is ahead.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Lookout alerts you about potholes even when the app is in the background while driving.",
         "NSLocationAlwaysUsageDescription": "Lookout needs background location to warn you about potholes while driving.",
-        "UIBackgroundModes": ["location", "fetch", "remote-notification"]
+        "UIBackgroundModes": [
+          "location",
+          "fetch",
+          "remote-notification",
+          "location",
+          "fetch",
+          "remote-notification"
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
+      "package": "com.gopika.lookout",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -43,7 +53,12 @@
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_LOCATION",
         "RECEIVE_BOOT_COMPLETED",
-        "VIBRATE"
+        "VIBRATE",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION"
       ]
     },
     "web": {
@@ -51,6 +66,13 @@
     },
     "plugins": [
       "expo-font",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#e85c3a"
+        }
+      ],
       [
         "expo-location",
         {
@@ -61,6 +83,12 @@
           "isAndroidForegroundServiceEnabled": true
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "51f4be6c-d802-4519-8352-4b6fe13de5dd"
+      }
+    },
+    "owner": "nainasingh1"
   }
 }

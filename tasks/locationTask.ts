@@ -6,7 +6,7 @@ import * as Location from 'expo-location';
 import { Pothole } from '../constants/theme';
 import { checkProximity } from '../services/proximity';
 import { sendPotholeNotification } from '../services/notifications';
-import { getAlertPrefs } from '../services/alertPrefs';
+import { getAlertPrefs, AlertPrefs } from '../services/alertPrefs';
 import { loadCachedPotholes } from '../services/potholes';
 
 export const BACKGROUND_LOCATION_TASK = 'lookout-bg-location';
@@ -26,6 +26,30 @@ export function registerLocationCallback(cb: LocationCallback | null) {
 // even when the React UI is not mounted (app minimised or fully closed).
 let _bgPotholes: Pothole[] = [];
 let _bgAlertedIds: Set<string> = new Set();
+
+// ─── Cached alert prefs ───────────────────────────────────────────────────────
+// getAlertPrefs() hits AsyncStorage (disk) on every call.  Calling it on every
+// single location update (every 3 s) means two disk reads per tick — on a
+// locked/throttled device this is the main cause of the 10+ second notification
+// delay and the "skipped when locked" issue.
+//
+// We cache prefs in memory and only re-read from disk when the app explicitly
+// calls refreshCachedAlertPrefs() (done at foreground resume and after the user
+// changes a pref in ProfileScreen).
+let _cachedPrefs: AlertPrefs = { drivingAlerts: true, proximityAlerts: true };
+
+/** Re-read prefs from AsyncStorage and update the in-memory cache.
+ *  Call this once at app start and whenever the user changes a pref. */
+export async function refreshCachedAlertPrefs(): Promise<void> {
+  _cachedPrefs = await getAlertPrefs();
+}
+
+/** Update the in-memory pref cache immediately (no disk read).
+ *  Call this right after setAlertPrefs() so the background task sees the new
+ *  value without waiting for the next refreshCachedAlertPrefs() call. */
+export function setCachedAlertPrefs(prefs: Partial<AlertPrefs>): void {
+  _cachedPrefs = { ..._cachedPrefs, ...prefs };
+}
 
 /**
  * Call this from MapScreen whenever the Firestore pothole list updates,
@@ -70,9 +94,9 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: any) =>
   );
   _bgAlertedIds = updatedAlertedIds;
 
-  // Send one OS push notification per new proximity alert (if enabled)
-  const { proximityAlerts } = await getAlertPrefs();
-  if (proximityAlerts) {
+  // Send one OS push notification per new proximity alert (if enabled).
+  // Use the in-memory cache — no disk read in the hot path.
+  if (_cachedPrefs.proximityAlerts) {
     for (const alert of newAlerts) {
       await sendPotholeNotification(
         alert.pothole.location,
